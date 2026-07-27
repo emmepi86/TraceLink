@@ -162,10 +162,18 @@ def main() -> int:
     symbols = payload.get("symbols") or payload
     stop = set(_DEFAULT_STOP) | {s.strip() for s in args.stopwords.split(",") if s.strip()}
 
-    notes = sorted(
-        p for p in os.listdir(args.vault)
-        if p.endswith(".md") and p not in ("INDEX.md", "CODE-INDEX.md")
-    )
+    # RES-OWNERSHIP: only notes tracelink generated. Pointing --vault at a
+    # directory of hand-written markdown must never rewrite it.
+    notes, skipped = [], 0
+    for p in sorted(os.listdir(args.vault)):
+        if not p.endswith(".md") or p in ("INDEX.md", "CODE-INDEX.md"):
+            continue
+        if "tracelink_schema:" in open(os.path.join(args.vault, p), errors="replace").read():
+            notes.append(p)
+        else:
+            skipped += 1
+    if skipped:
+        print(f"warning: skipped {skipped} markdown file(s) without tracelink_schema")
     if not notes:
         print(f"no notes in {args.vault}")
         return 1

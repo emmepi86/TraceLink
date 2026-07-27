@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.1 — correctness follow-up
+
+Review found the documented explicit grammar never reaching the CLI.
+
+- **`### STATUS:` and `### SEVERITY:` now work end to end.** `note_body` filtered
+  headings to `## RES-n` before classifying, so the explicit lines were discarded
+  and a note marked CLOSED came out `open`. The 0.2.0 tests missed it because
+  they called `classify()` directly — a test that skips the caller cannot see the
+  caller's mistake. Finding headings and state headings are now tracked
+  separately.
+- **Generated notes carry `tracelink_schema: 1`,** and `link.py` refuses to touch
+  anything without it. Pointing `--vault` at a folder of hand-written markdown
+  can no longer rewrite it; skipped files are reported.
+- **Stale notes are pruned** via a manifest. A findings that leaves the register
+  takes its note with it — but only files the previous manifest recorded are ever
+  deleted.
+- **The example proves what the README claims.** RES-02's body now really
+  contains the word CLOSED while staying open, and RES-01 carries explicit
+  status and severity headings.
+- **The end-to-end test asserts exact symbol sets** per note, not membership. The
+  looser check would have passed a regression that added `severity` back.
+- **CI** on 3.11 and 3.12: compile, unit tests, and the demo run twice with
+  `--check` to prove idempotence.
+
 ## 0.2.0 — correctness
 
 No new features. Every entry is a defect that produced silently wrong output in

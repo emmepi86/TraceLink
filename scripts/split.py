@@ -98,14 +98,42 @@ def split(register: str, prefix: str) -> "collections.OrderedDict[str, List[str]
 
 
 def note_body(fid: str, blocks: List[str], prefix: str) -> tuple:
+    """Build the note.
+
+    Two heading sets, deliberately distinct. `finding_headings` are the
+    `## RES-01` lines and carry the title. `state_headings` add the explicit
+    `### STATUS:` / `### SEVERITY:` lines.
+
+    Collapsing them was a real bug: `note_body` filtered to finding headings
+    only, so the documented explicit grammar never reached `classify()` and a
+    note marked `### STATUS: CLOSED` came out `open`. The unit tests missed it
+    because they called `classify()` directly, bypassing the very filter that
+    broke it — a test that skips the caller cannot see the caller's mistake.
+    """
     blob = "\n\n".join(blocks)
-    heads = [l for l in blob.splitlines() if re.match(rf"#{{2,6}} {re.escape(prefix)}-\d+", l)]
-    st, sv = classify(heads), severity(heads)
+    finding_re = re.compile(rf"#{{2,6}} {re.escape(prefix)}-\d+")
+    finding_headings, state_headings = [], []
+    for line in blob.splitlines():
+        if not line.lstrip().startswith("#"):
+            continue
+        if finding_re.match(line):
+            finding_headings.append(line)
+            state_headings.append(line)
+        elif _STATUS_RE.search(line) or _SEVERITY_RE.search(line):
+            state_headings.append(line)
+
+    st, sv = classify(state_headings), severity(state_headings)
     refs = sorted({r for r in re.findall(rf"{re.escape(prefix)}-\d+", blob) if r != fid},
                   key=lambda r: int(r.split("-")[-1]))
-    title = re.sub(rf"^#{{2,6}} {re.escape(prefix)}-\d+\s*[—:-]?\s*", "", heads[0]).strip() if heads else fid
+    title = (re.sub(rf"^#{{2,6}} {re.escape(prefix)}-\d+\s*[—:-]?\s*", "",
+                    finding_headings[0]).strip() if finding_headings else fid)
     body = "\n".join([
         "---",
+        # RES-OWNERSHIP: the marker that makes a note recognisably ours. link.py
+        # refuses to touch anything without it, so pointing --vault at a folder
+        # of hand-written markdown cannot rewrite it.
+        "tracelink_schema: 1",
+        f"tracelink_id: {fid}",
         f"id: {fid}",
         f"status: {st}",
         f"severity: {sv}",
@@ -144,6 +172,28 @@ def main() -> int:
             fh.write(body)
         rows.append((fid, st, sv, n, title))
 
+    # RES-PRUNE: remove notes for findings that left the register — but only
+    # ones this tool generated and previously recorded. A file absent from the
+    # old manifest is never deleted, whatever it looks like.
+    import json as _json
+    man_path = os.path.join(args.out, ".tracelink-manifest.json")
+    previous = []
+    if os.path.exists(man_path):
+        try:
+            previous = _json.load(open(man_path)).get("generated_notes", [])
+        except Exception:
+            previous = []
+    current = [f"{r[0]}.md" for r in rows]
+    pruned = 0
+    for stale in sorted(set(previous) - set(current)):
+        path = os.path.join(args.out, stale)
+        if os.path.exists(path) and "tracelink_schema:" in open(path, errors="replace").read():
+            os.remove(path)
+            pruned += 1
+    with open(man_path, "w") as fh:
+        _json.dump({"schema_version": 1, "generated_from": os.path.basename(args.register),
+                    "generated_notes": current}, fh, indent=1)
+
     rows.sort(key=lambda r: int(r[0].split("-")[-1]))
     idx = [
         "# Findings — index",
@@ -168,7 +218,7 @@ def main() -> int:
         fh.write("\n".join(idx) + "\n")
 
     counts = collections.Counter(r[1] for r in rows)
-    print(f"{len(rows)} notes -> {args.out}")
+    print(f"{len(rows)} notes -> {args.out}" + (f"   pruned {pruned}" if pruned else ""))
     print("  " + "  ".join(f"{k}={v}" for k, v in counts.most_common()))
     return 0
 

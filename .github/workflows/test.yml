@@ -1,0 +1,28 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: compile
+        run: python -m compileall scripts tests
+      - name: unit tests
+        run: python -m unittest discover tests -v
+      - name: the demo must link what it claims
+        run: |
+          python3 scripts/split.py --register examples/FINDINGS.example.md --out /tmp/v --prefix RES
+          python3 scripts/symbols.py --repo examples/demo-project --backend scan --out /tmp/s.json
+          python3 scripts/link.py --vault /tmp/v --symbols /tmp/s.json
+          python3 scripts/link.py --vault /tmp/v --symbols /tmp/s.json --check

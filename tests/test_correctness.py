@@ -127,3 +127,101 @@ class TheDemoLinksWhatItClaims(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExplicitGrammarWorksThroughTheCLI(unittest.TestCase):
+    """0.2.0 documented `### STATUS: CLOSED` and did not honour it.
+
+    `note_body` filtered headings to `## RES-n` before classifying, so the
+    explicit lines were discarded and a note marked CLOSED came out open. The
+    unit tests missed it because they called `classify()` directly — a test that
+    skips the caller cannot see the caller's mistake.
+    """
+
+    def test_status_and_severity_reach_the_note(self):
+        from split import note_body
+        block = "## RES-01 — example\n\n### STATUS: CLOSED\n### SEVERITY: LOW\n"
+        _body, status, sev, _n, _t = note_body("RES-01", [block], "RES")
+        self.assertEqual(status, "closed")
+        self.assertEqual(sev, "low")
+
+    def test_bracket_severity_still_works(self):
+        from split import note_body
+        _b, status, sev, _n, _t = note_body("RES-01", ["## RES-01 — x [HIGH]\n"], "RES")
+        self.assertEqual((status, sev), ("open", "high"))
+
+    def test_a_body_mentioning_another_closure_does_not_close_the_note(self):
+        from split import note_body
+        block = "## RES-02 — x [MEDIUM]\n\nThe earlier RES-01 finding is CLOSED, but this is open.\n"
+        _b, status, _sev, _n, _t = note_body("RES-02", [block], "RES")
+        self.assertEqual(status, "open")
+
+
+class NotesAreOwnedAndPruned(unittest.TestCase):
+    def test_generated_notes_carry_the_ownership_marker(self):
+        from split import note_body
+        body, *_ = note_body("RES-01", ["## RES-01 — x\n"], "RES")
+        self.assertIn("tracelink_schema: 1", body)
+
+    def test_unmanaged_markdown_is_skipped_by_the_linker(self):
+        import subprocess
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with tempfile.TemporaryDirectory() as tmp:
+            hand = os.path.join(tmp, "MY-NOTES.md")
+            original = "# my own notes\n\n`parse_payload` is mentioned here.\n"
+            open(hand, "w").write(original)
+            syms = os.path.join(tmp, "s.json")
+            import json as j
+            j.dump({"backend": "test", "symbols": {"parse_payload": "src/parser.py:L4"}},
+                   open(syms, "w"))
+            subprocess.run([sys.executable, f"{root}/scripts/link.py",
+                            "--vault", tmp, "--symbols", syms], capture_output=True)
+            self.assertEqual(open(hand).read(), original)
+
+
+class TheDemoLinksExactlyTheseSymbols(unittest.TestCase):
+    """Asserting exact sets, not membership: a regression that added `severity`
+    to one note passed the earlier looser check."""
+
+    def test_exact_symbol_sets(self):
+        import json
+        import re as _re
+        import subprocess
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with tempfile.TemporaryDirectory() as tmp:
+            vault, syms = os.path.join(tmp, "v"), os.path.join(tmp, "s.json")
+            for cmd in (
+                [f"{root}/scripts/split.py", "--register",
+                 f"{root}/examples/FINDINGS.example.md", "--out", vault, "--prefix", "RES"],
+                [f"{root}/scripts/symbols.py", "--repo",
+                 f"{root}/examples/demo-project", "--backend", "scan", "--out", syms],
+                [f"{root}/scripts/link.py", "--vault", vault, "--symbols", syms],
+            ):
+                subprocess.run([sys.executable] + cmd, check=True, capture_output=True)
+
+            def linked(note):
+                text = open(os.path.join(vault, note)).read()
+                block = text.split("<!-- tracelink:linked-code:start -->")[1]
+                block = block.split("<!-- tracelink:linked-code:end -->")[0]
+                return set(_re.findall(r"`([^`]+)`", block))
+
+            self.assertEqual(linked("RES-01.md"), {"parse_payload"})
+            self.assertEqual(linked("RES-02.md"), {"ingest_batch", "ingest_stream"})
+
+    def test_second_run_modifies_nothing(self):
+        import subprocess
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with tempfile.TemporaryDirectory() as tmp:
+            vault, syms = os.path.join(tmp, "v"), os.path.join(tmp, "s.json")
+            for cmd in (
+                [f"{root}/scripts/split.py", "--register",
+                 f"{root}/examples/FINDINGS.example.md", "--out", vault, "--prefix", "RES"],
+                [f"{root}/scripts/symbols.py", "--repo",
+                 f"{root}/examples/demo-project", "--backend", "scan", "--out", syms],
+                [f"{root}/scripts/link.py", "--vault", vault, "--symbols", syms],
+            ):
+                subprocess.run([sys.executable] + cmd, check=True, capture_output=True)
+            r = subprocess.run([sys.executable, f"{root}/scripts/link.py",
+                                "--vault", vault, "--symbols", syms, "--check"],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout)

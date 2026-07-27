@@ -90,16 +90,21 @@ $ python3 scripts/split.py --register examples/FINDINGS.example.md --out /tmp/tl
 2 notes -> /tmp/tl
   closed=1  open=1
 
-$ python3 scripts/symbols.py --repo scripts --backend scan --out /tmp/tl.json
-11 symbols via scan -> /tmp/tl.json
+$ python3 scripts/symbols.py --repo examples/demo-project --backend scan --out /tmp/tl.json
+3 symbols via scan -> /tmp/tl.json
 
 $ python3 scripts/link.py --vault /tmp/tl --symbols /tmp/tl.json
-forward: 2/2 notes linked
-backward: 1 symbols -> /tmp/tl/CODE-INDEX.md
+notes_scanned:      2
+notes_with_matches: 2
+notes_modified:     2
+symbols_linked:     3
+distinct_symbols:   3
 ```
 
-Open `/tmp/tl/INDEX.md`. **RES-02 is `open`** even though its body says RES-01 was
-closed — that one line is the whole reason the example exists.
+Open `/tmp/tl/INDEX.md`. **RES-02 is `open`** even though its body contains the
+word `CLOSED` — it merely mentions RES-01's outcome. **RES-01 is `closed` with
+severity `low`**, taken from its explicit `### STATUS:` / `### SEVERITY:`
+headings. Those two lines are the whole reason the example exists.
 
 ## Install
 
@@ -144,8 +149,8 @@ when someone else's project changes shape.
 
 ## Design decisions worth knowing
 
-**tracelink never reads its own output.** Frontmatter and the managed
-`<!-- tracelink:linked-code -->` block are stripped before matching. Without
+**tracelink never reads its own output.** Frontmatter and the managed block, delimited by
+`<!-- tracelink:linked-code:start -->` and `:end`, are stripped before matching. Without
 this the tool matches itself: 0.1.0's demo linked both example notes to
 `severity`, a function inside `split.py`, and reported "2/2 notes linked" — a
 statistic that was formally correct and substantively false. It also made links
