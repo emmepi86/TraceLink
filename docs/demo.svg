@@ -12,17 +12,19 @@
     .warn  { fill: #d29922; }
     .title { fill: #8b949e; font-size: 11px; letter-spacing: .08em; }
 
-    .step  { opacity: 0; }
-    .s1 { animation: show 15s infinite;  animation-delay: 0.2s; }
-    .s2 { animation: show 15s infinite;  animation-delay: 3.4s; }
-    .s3 { animation: show 15s infinite;  animation-delay: 6.6s; }
-    .s4 { animation: show 15s infinite;  animation-delay: 9.8s; }
+    /* 4 screens, 16s loop, 4s each. Each is visible for ~23% of the cycle
+       (3.5s) and hidden for the rest — with 62% they overlapped three deep. */
+    .step { opacity: 0; animation: show 16s infinite; }
+    .s1 { animation-delay:  0s; }
+    .s2 { animation-delay:  4s; }
+    .s3 { animation-delay:  8s; }
+    .s4 { animation-delay: 12s; }
     @keyframes show {
-      0%    { opacity: 0 }
-      1.5%  { opacity: 1 }
-      62%   { opacity: 1 }
-      66%   { opacity: 0 }
-      100%  { opacity: 0 }
+      0%   { opacity: 0 }
+      2%   { opacity: 1 }
+      22%  { opacity: 1 }
+      24%  { opacity: 0 }
+      100% { opacity: 0 }
     }
     .caret { animation: blink 1.05s steps(1) infinite; }
     @keyframes blink { 50% { opacity: 0 } }
