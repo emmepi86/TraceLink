@@ -6,7 +6,7 @@ every note to the code it names — file and line, in both directions.
 Works as a [Claude Code](https://claude.com/claude-code) plugin, or as three
 standalone Python scripts with no dependencies.
 
-**Author:** Massimiliano Paragnani — [aosol.cloud](https://aosol.cloud) · MIT
+**Author:** Massimiliano Paragnani — [aosol.cloud](https://aosol.cloud) · Apache-2.0
 
 ---
 
@@ -61,8 +61,8 @@ skill in `skills/tracelink/` is picked up from the plugin manifest.
 **Standalone** — clone and run the scripts. Python 3.8+, no dependencies.
 
 ```bash
-git clone https://github.com/<you>/tracelink
-cd tracelink
+git clone https://github.com/emmepi86/TraceLink
+cd TraceLink
 ```
 
 ## Use
@@ -133,4 +133,8 @@ buried in a document nobody reopens.
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE).
+Apache-2.0 — see [LICENSE](LICENSE).
+
+Apache rather than MIT for the explicit patent grant: it makes the boundary of
+what is and is not granted clear, instead of leaving it to implied-licence
+arguments. It is equally permissive — use it inside proprietary software freely.
