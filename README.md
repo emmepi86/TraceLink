@@ -149,6 +149,11 @@ when someone else's project changes shape.
 
 ## Design decisions worth knowing
 
+They all follow from one line, set out in [DESIGN_PRINCIPLES.md](DESIGN_PRINCIPLES.md):
+
+> **No conclusion may carry more certainty than the evidence it came from.**
+
+
 **tracelink never reads its own output.** Frontmatter and the managed block, delimited by
 `<!-- tracelink:linked-code:start -->` and `:end`, are stripped before matching. Without
 this the tool matches itself: 0.1.0's demo linked both example notes to
