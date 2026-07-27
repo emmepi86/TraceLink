@@ -20,16 +20,26 @@ every note to the code it names — file and line, both directions.
 Three steps. The first two are independent of any editor; the vault happens to
 be Obsidian-compatible because that costs nothing.
 
+Paths must be absolute. When the plugin is invoked the working directory is the
+user's project, not the plugin — relative `scripts/...` only works from the
+TraceLink checkout.
+
 ```bash
-# 1. symbol map — tries graphify, then ctags, then a built-in scan
-python3 scripts/symbols.py --repo <REPO> --out symbols.json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/symbols.py" \
+  --repo "${CLAUDE_PROJECT_DIR}" \
+  --out  "${CLAUDE_PROJECT_DIR}/.tracelink/symbols.json"
 
-# 2. register -> one note per finding, with frontmatter and [[wikilinks]]
-python3 scripts/split.py --register <REGISTER.md> --out <VAULT> --prefix RES
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/split.py" \
+  --register "${CLAUDE_PROJECT_DIR}/FINDINGS.md" \
+  --out      "${CLAUDE_PROJECT_DIR}/.tracelink/vault" --prefix RES
 
-# 3. cross-link, both directions
-python3 scripts/link.py --vault <VAULT> --symbols symbols.json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/link.py" \
+  --vault   "${CLAUDE_PROJECT_DIR}/.tracelink/vault" \
+  --symbols "${CLAUDE_PROJECT_DIR}/.tracelink/symbols.json"
 ```
+
+`--check` writes nothing and exits 1 when anything is stale — use it in CI.
+`--explain` prints why each link was made.
 
 Outputs: `<VAULT>/<ID>.md` per finding, `INDEX.md` (status and severity table,
 open+high listed separately), `CODE-INDEX.md` (symbol -> notes).

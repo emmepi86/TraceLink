@@ -23,40 +23,66 @@ import os
 import re
 from typing import Dict, List
 
-#: Status keywords, checked in order — the first match wins, so the more
-#: specific phrases must come first.
-_STATUS_RULES = (
-    ("withdrawn", ("WITHDRAWN", "RETRACTED")),
-    ("partial", ("PARTIALLY CLOSED", "PARTIAL")),
-    ("downgraded", ("DOWNGRADED",)),
-    ("closed", ("CLOSED", "RESOLVED", "FIXED")),
+#: Explicit grammar. `STATUS: CLOSED` in a heading is unambiguous; free-form
+#: keywords are a legacy fallback and warn.
+_STATUS_RE = re.compile(
+    r"\bSTATUS:\s*(OPEN|CLOSED|REOPENED|PARTIAL|WITHDRAWN|DOWNGRADED)\b", re.I)
+_SEVERITY_RE = re.compile(r"\bSEVERITY:\s*(CRITICAL|HIGH|MEDIUM|LOW)\b", re.I)
+
+#: Legacy keywords, matched on WORD BOUNDARIES. Substring matching classified
+#: "UNRESOLVED" as closed, because it contains "RESOLVED" — a wrong status in an
+#: index is worse than no status, and this was exactly that.
+_LEGACY = (
+    ("withdrawn", (r"\bWITHDRAWN\b", r"\bRETRACTED\b")),
+    ("open",      (r"\bREOPENED\b", r"\bUNRESOLVED\b")),
+    ("partial",   (r"\bPARTIALLY\s+CLOSED\b", r"\bPARTIAL\b")),
+    ("downgraded",(r"\bDOWNGRADED\b",)),
+    ("closed",    (r"\bCLOSED\b", r"\bRESOLVED\b", r"\bFIXED\b")),
 )
 
 _SEVERITIES = ("critical", "high", "medium", "low")
 
 
 def classify(headings: List[str]) -> str:
-    """Status from the finding's OWN headings, never from its body.
+    """Status from the finding's OWN headings, LAST explicit value wins.
 
-    This is the one thing in this file worth reading twice. Keyword-matching the
-    whole body misclassifies any finding that *mentions* another one's status —
-    a note reading "this already caused a withdrawn finding (X-16)" becomes
-    `withdrawn` itself. A wrong status in an index is worse than no status,
-    because an index is trusted at a glance.
+    Two rules, both learned the hard way:
+
+    Never read the body. A note saying "this caused a withdrawn finding (X-16)"
+    is not itself withdrawn.
+
+    Never match substrings, and never let an early heading beat a later one.
+    "UNRESOLVED" contains "RESOLVED"; a finding CLOSED in one session and
+    REOPENED in the next is open. Headings are read in order and the last
+    explicit status is the answer.
     """
-    blob = " ".join(headings).upper()
-    for status, keywords in _STATUS_RULES:
-        if any(k in blob for k in keywords):
-            return status
-    return "open"
+    status = "open"
+    for h in headings:
+        m = _STATUS_RE.search(h)
+        if m:
+            v = m.group(1).lower()
+            status = "open" if v == "reopened" else v
+            continue
+        for name, patterns in _LEGACY:
+            if any(re.search(p, h, re.I) for p in patterns):
+                status = name
+                break
+    return status
 
 
 def severity(headings: List[str]) -> str:
-    blob = " ".join(headings).upper()
-    for s in _SEVERITIES:
-        if f"[{s.upper()}]" in blob:
-            return s
-    return "unspecified"
+    """Last explicit severity wins, for the same reason status does — a finding
+    downgraded from HIGH to LOW must not keep reading HIGH."""
+    sev = "unspecified"
+    for h in headings:
+        m = _SEVERITY_RE.search(h)
+        if m:
+            sev = m.group(1).lower()
+            continue
+        for s in _SEVERITIES:
+            if f"[{s.upper()}]" in h.upper():
+                sev = s
+    return sev
 
 
 def split(register: str, prefix: str) -> "collections.OrderedDict[str, List[str]]":

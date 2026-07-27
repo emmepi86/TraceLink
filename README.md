@@ -144,7 +144,19 @@ when someone else's project changes shape.
 
 ## Design decisions worth knowing
 
-**Status comes from a finding's own headings, never its body.** A note reading
+**tracelink never reads its own output.** Frontmatter and the managed
+`<!-- tracelink:linked-code -->` block are stripped before matching. Without
+this the tool matches itself: 0.1.0's demo linked both example notes to
+`severity`, a function inside `split.py`, and reported "2/2 notes linked" — a
+statistic that was formally correct and substantively false. It also made links
+immortal, since a symbol removed from the prose was rediscovered in the block
+written by the previous run.
+
+**Status comes from a finding's own headings, never its body**, on word
+boundaries, and the last explicit value wins. Substring matching classified
+`UNRESOLVED` as closed because it contains `RESOLVED`, and a finding CLOSED then
+REOPENED stayed closed. Prefer the explicit grammar — `### STATUS: CLOSED`,
+`### SEVERITY: MEDIUM` — the free-form keywords are a legacy fallback. A note reading
 "this already caused a withdrawn finding (X-16)" is not itself withdrawn.
 Keyword-matching the whole blob gets this wrong, and a wrong status in an index
 is worse than no status, because an index is trusted at a glance. The example in

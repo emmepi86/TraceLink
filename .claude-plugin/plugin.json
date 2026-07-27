@@ -1,6 +1,6 @@
 {
   "name": "tracelink",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Turn an append-only findings register into a linked note vault, and connect every finding to the code it names \u2014 file and line.",
   "author": {
     "name": "Massimiliano Paragnani",
@@ -14,5 +14,8 @@
     "engineering-notes",
     "ctags",
     "graphify"
-  ]
+  ],
+  "displayName": "TraceLink",
+  "homepage": "https://github.com/emmepi86/TraceLink",
+  "repository": "https://github.com/emmepi86/TraceLink"
 }
