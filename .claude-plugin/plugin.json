@@ -1,0 +1,11 @@
+{
+  "name": "tracelink",
+  "version": "0.1.0",
+  "description": "Turn an append-only findings register into a linked note vault, and connect every finding to the code it names — file and line.",
+  "author": {
+    "name": "Massimiliano Paragnani",
+    "url": "https://aosol.cloud"
+  },
+  "license": "MIT",
+  "keywords": ["obsidian", "knowledge-graph", "code-navigation", "engineering-notes", "ctags", "graphify"]
+}
