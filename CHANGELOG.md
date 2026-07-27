@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0 — ambiguity is data, not a guess
+
+- **Symbol schema v2: every definition is recorded.** v1 kept one location per
+  name and discarded the rest, so a finding naming `validate` where two modules
+  define it was linked to whichever the backend returned first — an answer that
+  depended on filesystem order and carried no warning.
+- **An ambiguous symbol is never linked automatically.** It is reported with all
+  its locations and left alone. Three ways to resolve it, in order: the note
+  names the qualified form (`payments.validate`), the note mentions the defining
+  path, or the note's frontmatter overrides it.
+- **Qualified names** (`module.symbol`) are carried by every backend.
+- **Provenance in the index**: `schema_version`, `backend`, `repo_commit` and any
+  backend notes, so a stale index can be detected instead of trusted.
+- **`ambiguous_matches`** joins the metrics; `--explain` reports how each link
+  was resolved.
+- v1 symbol files still load — the linker normalises both shapes.
+
+
 ## 0.2.1 — correctness follow-up
 
 Review found the documented explicit grammar never reaching the CLI.

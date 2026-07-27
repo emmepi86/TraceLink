@@ -30,6 +30,34 @@ import re
 import sys
 from typing import Dict, Optional, Tuple
 
+
+def _add(out, name, path, line, kind, qualified):
+    """Record EVERY definition of a name, not just the first.
+
+    v1 kept one location per symbol and silently discarded the rest, so a
+    finding naming `validate` where two modules define it was linked to
+    whichever the backend happened to return first — an answer that depended on
+    filesystem order and came with no warning. Ambiguity is now data, and the
+    linker refuses to guess.
+    """
+    loc = {"path": path, "line": int(line) if line else None,
+           "kind": kind or "", "qualified_name": qualified}
+    bucket = out.setdefault(name, [])
+    if not any(b["path"] == loc["path"] and b["line"] == loc["line"] for b in bucket):
+        bucket.append(loc)
+
+
+def _repo_commit(repo):
+    """Provenance, so a stale index can be detected rather than trusted."""
+    try:
+        import subprocess
+        r = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"],
+                           capture_output=True, text=True, timeout=5)
+        return r.stdout.strip() or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 # --------------------------------------------------------------------------- #
 # graphify
 # --------------------------------------------------------------------------- #
@@ -72,7 +100,7 @@ def from_graphify(repo: str) -> Tuple[Dict[str, str], Optional[str]]:
         loc = n.get("source_location") or n.get("line")
         if not src:
             continue
-        out[label] = f"{src}:{loc}" if loc else str(src)
+        _add(out, label, str(src), loc, n.get("file_type") or "", label)
     return out, None
 
 
@@ -102,10 +130,10 @@ def from_ctags(repo: str) -> Tuple[Dict[str, str], Optional[str]]:
                 if len(parts) < 3:
                     continue
                 name, fname = parts[0], parts[1]
-                if name in out:
-                    continue
                 m = re.search(r"line:(\d+)", line)
-                out[name] = f"{fname}:L{m.group(1)}" if m else fname
+                k = re.search(r"\bkind:(\w+)", line)
+                _add(out, name, fname, m.group(1) if m else None,
+                     k.group(1) if k else "", name)
     except Exception as exc:  # noqa: BLE001
         return {}, f"unreadable tags: {type(exc).__name__}"
     return out, None
@@ -159,10 +187,12 @@ def from_scan(repo: str, max_files: int = 20000) -> Tuple[Dict[str, str], Option
             rel = os.path.relpath(full, repo)
             try:
                 with open(full, errors="replace") as fh:
+                    module = os.path.splitext(os.path.basename(fn))[0]
                     for i, line in enumerate(fh, 1):
                         m = rx.match(line)
-                        if m and m.group(1) not in out:
-                            out[m.group(1)] = f"{rel}:L{i}"
+                        if m:
+                            _add(out, m.group(1), rel, i, ext.lstrip("."),
+                                 f"{module}.{m.group(1)}")
             except Exception:  # noqa: BLE001 - an unreadable file is not fatal
                 continue
     return out, None
@@ -201,9 +231,21 @@ def main() -> int:
     if not syms:
         print("no symbols found by any backend", file=sys.stderr)
         return 1
+    total = sum(len(v) for v in syms.values())
+    ambiguous = sum(1 for v in syms.values() if len(v) > 1)
     with open(args.out, "w") as fh:
-        json.dump({"backend": used, "repo": args.repo, "symbols": syms}, fh, indent=1)
-    print(f"{len(syms)} symbols via {used} -> {args.out}")
+        json.dump({
+            "schema_version": 2,
+            "backend": used,
+            "repo": args.repo,
+            "repo_commit": _repo_commit(os.path.abspath(args.repo)),
+            "notes": notes,
+            "symbols": syms,
+        }, fh, indent=1)
+    print(f"{len(syms)} names, {total} definitions via {used} -> {args.out}")
+    if ambiguous:
+        print(f"  {ambiguous} name(s) defined in more than one place — "
+              f"the linker will not guess between them")
     return 0
 
 

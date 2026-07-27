@@ -112,8 +112,81 @@ def candidates(text: str, symbols: Dict[str, str], min_len: int,
     return sorted(ranked.items(), key=lambda kv: (order[kv[1]], kv[0]))
 
 
-def render_block(links: List[Tuple[str, str]], symbols: Dict[str, str]) -> str:
-    body = "\n".join(f"- `{name}` — {symbols[name]}" for name, _why in links)
+
+def normalise(symbols: dict) -> dict:
+    """Accept v1 (name -> "path:line") and v2 (name -> [locations]).
+
+    Everything downstream sees a list, so ambiguity is representable rather than
+    silently collapsed.
+    """
+    out = {}
+    for name, val in symbols.items():
+        if isinstance(val, list):
+            out[name] = val
+        else:
+            txt = str(val)
+            path, _, line = txt.rpartition(":")
+            out[name] = [{"path": path or txt,
+                          "line": line.lstrip("L") if path else None,
+                          "kind": "", "qualified_name": name}]
+    return out
+
+
+def fmt(loc: dict) -> str:
+    return f"{loc['path']}:L{loc['line']}" if loc.get("line") else str(loc["path"])
+
+
+def disambiguate(name: str, locations: list, text: str, overrides: dict):
+    """Pick a location only when the note itself says which one.
+
+    A name defined in two places is not evidence for either. v1 linked to
+    whichever the backend returned first — an answer that depended on filesystem
+    order and carried no warning. The rule now: a symbol is linked when there is
+    exactly one definition, or when the note disambiguates it. Otherwise it is
+    reported as ambiguous and left alone.
+
+    Three ways to disambiguate, in order:
+      the note names the qualified form (`payments.validate`)
+      the note mentions the defining path
+      the note's frontmatter overrides it explicitly
+    """
+    if name in overrides:
+        want = overrides[name]
+        for loc in locations:
+            if want in (loc.get("qualified_name"), loc["path"], fmt(loc)):
+                return loc, "frontmatter-override"
+        return None, "override-unmatched"
+    if len(locations) == 1:
+        return locations[0], "unique"
+    for loc in locations:
+        q = loc.get("qualified_name") or ""
+        if q and q != name and q in text:
+            return loc, "qualified-name"
+    for loc in locations:
+        if loc["path"] in text:
+            return loc, "path-in-note"
+    return None, "ambiguous"
+
+
+_OVERRIDE = re.compile(r"^\s*tracelink:\s*$\n((?:\s+\w[\w.]*:\s*\S+\s*\n)+)", re.M)
+
+
+def read_overrides(text: str) -> dict:
+    """`tracelink:` mapping in the frontmatter, when the author has decided."""
+    m = _OVERRIDE.search(text[:2000])
+    if not m:
+        return {}
+    out = {}
+    for line in m.group(1).splitlines():
+        if ":" in line:
+            k, _, v = line.strip().partition(":")
+            if k and v.strip() and k != "symbols":
+                out[k.strip()] = v.strip()
+    return out
+
+
+def render_block(links, symbols) -> str:
+    body = "\n".join(f"- `{name}` — {fmt(loc)}" for name, loc, _why in links)
     return f"{_BLOCK_START}\n{_FORWARD_HEADING}\n\n{body}\n{_BLOCK_END}\n"
 
 
@@ -159,7 +232,7 @@ def main() -> int:
 
     with open(args.symbols) as fh:
         payload = json.load(fh)
-    symbols = payload.get("symbols") or payload
+    symbols = normalise(payload.get("symbols") or payload)
     stop = set(_DEFAULT_STOP) | {s.strip() for s in args.stopwords.split(",") if s.strip()}
 
     # RES-OWNERSHIP: only notes tracelink generated. Pointing --vault at a
@@ -179,13 +252,27 @@ def main() -> int:
         return 1
 
     backward: Dict[str, List[str]] = collections.defaultdict(list)
-    scanned = with_matches = modified = total_links = 0
+    scanned = with_matches = modified = total_links = ambiguous = 0
 
     for name in notes:
         path = os.path.join(args.vault, name)
         text = open(path, errors="replace").read()
         scanned += 1
-        links = candidates(matchable(text), symbols, args.min_len, stop)[: args.max_links]
+        body = matchable(text)
+        overrides = read_overrides(text)
+        links, note_ambiguous = [], []
+        for sym, why in candidates(body, symbols, args.min_len, stop):
+            loc, how = disambiguate(sym, symbols[sym], body, overrides)
+            if loc is None:
+                note_ambiguous.append((sym, how))
+                continue
+            links.append((sym, loc, f"{why}/{how}"))
+        links = links[: args.max_links]
+        ambiguous += len(note_ambiguous)
+        for sym, how in note_ambiguous:
+            print(f"AMBIGUOUS {sym} in {name} ({how})")
+            for loc in symbols[sym]:
+                print(f"  - {fmt(loc)}")
         if links:
             with_matches += 1
             total_links += len(links)
@@ -195,10 +282,10 @@ def main() -> int:
             if not args.check:
                 write_atomic(path, new)
         stem = os.path.splitext(name)[0]
-        for sym, why in links:
-            backward[sym].append(stem)
+        for sym, loc, why in links:
+            backward[sym].append((stem, fmt(loc)))
             if args.explain:
-                print(f"{stem} -> {sym}\n    reason: {why}\n    destination: {symbols[sym]}")
+                print(f"{stem} -> {sym}\n    reason: {why}\n    destination: {fmt(loc)}")
 
     lines = [
         "# Code index — which notes mention which symbol",
@@ -213,9 +300,9 @@ def main() -> int:
         "| symbol | location | notes |",
         "|---|---|---|",
     ]
-    for sym in sorted(backward, key=lambda s: (-len(set(backward[s])), s)):
-        refs = " ".join(f"[[{n}]]" for n in sorted(set(backward[sym])))
-        loc = str(symbols[sym]).replace("|", r"\|")
+    for sym in sorted(backward, key=lambda s: (-len({n for n, _ in backward[s]}), s)):
+        refs = " ".join(f"[[{n}]]" for n in sorted({n for n, _ in backward[sym]}))
+        loc = sorted({l for _, l in backward[sym]})[0].replace("|", r"\|")
         lines.append(f"| `{sym}` | {loc} | {refs} |")
     index_text = "\n".join(lines) + "\n"
 
@@ -230,6 +317,10 @@ def main() -> int:
     print(f"notes_modified:     {modified}")
     print(f"symbols_linked:     {total_links}")
     print(f"distinct_symbols:   {len(backward)}")
+    print(f"ambiguous_matches:  {ambiguous}")
+    stale_note = payload.get("repo_commit")
+    if stale_note:
+        print(f"index_commit:       {stale_note[:12]}")
     if args.check:
         stale = modified + (1 if index_stale else 0)
         print(f"check: {stale} file(s) would change")

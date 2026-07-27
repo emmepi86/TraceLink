@@ -174,6 +174,18 @@ linked; prose that talks around them does not. This is stated here rather than
 left for you to discover — and it is a good reason to name symbols when writing
 findings.
 
+**An ambiguous symbol is never guessed.** A name defined in two places is not
+evidence for either, so tracelink reports both locations and links neither.
+Resolve it by naming the qualified form (`payments.validate`), mentioning the
+path in the note, or overriding it in the note's frontmatter:
+
+```yaml
+---
+tracelink:
+  validate: src/payments.py
+---
+```
+
 **Links are capped, because generic names are noise.** `data`, `status`,
 `record` and friends match modules and tables everywhere. `--max-links`
 (default 8) and `--min-len` (default 7) control it, and a name inside backticks

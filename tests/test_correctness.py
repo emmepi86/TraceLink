@@ -17,6 +17,8 @@ import link  # noqa: E402
 from split import classify, severity  # noqa: E402
 
 SYMS = {"parse_payload": "src/parser.py:L4", "severity": "scripts/split.py:L60"}
+_LOC = {"path": "src/parser.py", "line": 4, "kind": "py",
+        "qualified_name": "parser.parse_payload"}
 
 
 class TracelinkNeverReadsItsOwnOutput(unittest.TestCase):
@@ -58,8 +60,8 @@ class LinksAreNotImmortal(unittest.TestCase):
 
     def test_the_block_is_regenerated_not_appended(self):
         note = "# RES-01\n\n`parse_payload` here.\n"
-        once = link.apply_block(note, [("parse_payload", "inline-code")], SYMS)
-        twice = link.apply_block(once, [("parse_payload", "inline-code")], SYMS)
+        once = link.apply_block(note, [("parse_payload", _LOC, "inline-code")], SYMS)
+        twice = link.apply_block(once, [("parse_payload", _LOC, "inline-code")], SYMS)
         self.assertEqual(once, twice)
         self.assertEqual(twice.count(link._BLOCK_START), 1)
 
@@ -225,3 +227,69 @@ class TheDemoLinksExactlyTheseSymbols(unittest.TestCase):
                                 "--vault", vault, "--symbols", syms, "--check"],
                                capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stdout)
+
+
+class AmbiguousSymbolsAreNeverGuessed(unittest.TestCase):
+    """0.2.x kept one location per name and discarded the rest, so a finding
+    naming `validate` where two modules define it was linked to whichever the
+    backend returned first — an answer that depended on filesystem order and
+    carried no warning."""
+
+    TWO = {"validate": [
+        {"path": "src/users.py", "line": 31, "kind": "py", "qualified_name": "users.validate"},
+        {"path": "src/payments.py", "line": 74, "kind": "py", "qualified_name": "payments.validate"},
+    ]}
+
+    def test_a_bare_name_is_not_linked(self):
+        loc, how = link.disambiguate("validate", self.TWO["validate"],
+                                     "the `validate` helper is wrong.", {})
+        self.assertIsNone(loc)
+        self.assertEqual(how, "ambiguous")
+
+    def test_a_qualified_name_resolves_it(self):
+        loc, how = link.disambiguate("validate", self.TWO["validate"],
+                                     "the bug is in `payments.validate`.", {})
+        self.assertEqual(loc["path"], "src/payments.py")
+        self.assertEqual(how, "qualified-name")
+
+    def test_a_path_in_the_note_resolves_it(self):
+        loc, how = link.disambiguate("validate", self.TWO["validate"],
+                                     "see src/users.py for the failing branch.", {})
+        self.assertEqual(loc["path"], "src/users.py")
+        self.assertEqual(how, "path-in-note")
+
+    def test_a_frontmatter_override_wins(self):
+        loc, how = link.disambiguate("validate", self.TWO["validate"], "prose.",
+                                     {"validate": "src/payments.py"})
+        self.assertEqual(loc["path"], "src/payments.py")
+        self.assertEqual(how, "frontmatter-override")
+
+    def test_a_single_definition_still_links(self):
+        loc, how = link.disambiguate(
+            "parse_payload",
+            [{"path": "src/parser.py", "line": 4, "kind": "py",
+              "qualified_name": "parser.parse_payload"}], "prose.", {})
+        self.assertEqual(how, "unique")
+
+    def test_v1_symbol_files_still_load(self):
+        norm = link.normalise({"parse_payload": "src/parser.py:L4"})
+        self.assertEqual(norm["parse_payload"][0]["path"], "src/parser.py")
+        self.assertEqual(link.fmt(norm["parse_payload"][0]), "src/parser.py:L4")
+
+
+class TheSymbolIndexCarriesProvenance(unittest.TestCase):
+    def test_schema_and_backend_are_recorded(self):
+        import json
+        import subprocess
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "s.json")
+            subprocess.run([sys.executable, f"{root}/scripts/symbols.py",
+                            "--repo", f"{root}/examples/demo-project",
+                            "--backend", "scan", "--out", out],
+                           check=True, capture_output=True)
+            d = json.load(open(out))
+            self.assertEqual(d["schema_version"], 2)
+            self.assertEqual(d["backend"], "scan")
+            self.assertIn("repo_commit", d)
+            self.assertIsInstance(d["symbols"]["parse_payload"], list)
