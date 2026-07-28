@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.4.0 — freshness is verified, not recorded
+
+0.3.x stored provenance and printed it. It never compared it, so an index built
+on one commit was used against another without a word. The changelog said a
+stale index "can be detected instead of trusted" — true of a consumer, not of
+tracelink. Now it is true of tracelink.
+
+### Added
+
+- **Repository fingerprint**: `sha256` over `relative/path\0sha256(content)` records,
+  sorted by normalised path. Independent of filesystem order, mtime, inode,
+  absolute path and path separator — each of which changes without the code
+  changing. Content alone decides.
+- **Four explicit states** — `fresh`, `stale`, `unknown`, `invalid`. A boolean
+  cannot say "I do not know", and rounding unknown to either side is how a tool
+  starts lying quietly.
+- **Schema v3**: `repository` (root, vcs, commit, dirty, fingerprint, files
+  counted) and `indexing` (backend, partial, warnings, configuration and its
+  fingerprint). `root` is logical (`"."`) so an index is usable from another
+  checkout and does not leak the author's filesystem.
+- `--repo`, `--freshness warn|require|ignore`, `--require-fresh-index`,
+  `--allow-partial-index`, `--format text|json`.
+- `--check` fails when the index is stale, and when it is unverifiable under
+  `require`.
+- **Completeness reported separately from freshness.** An index can be
+  `fresh + partial`: it matches the tree and still does not cover all of it.
+
+### Decision rules
+
+The fingerprint decides when present, because it covers uncommitted work and
+repositories with no VCS. Failing that, a commit can prove divergence but never
+correspondence — the working tree is invisible to it — so a matching commit
+without a fingerprint is `unknown`, not `fresh`.
+
+### Fixed
+
+- **The index no longer invalidates itself.** Writing `symbols.json` inside the
+  repository made the tree stale the instant the index was written. Found by a
+  test that indexed into its own fixture directory.
+
+### Compatibility
+
+v1 and v2 indexes still load. v1 is `unknown` — legacy-index-without-provenance —
+and is never rejected outside `require`.
+
+### Not done
+
+The linker does not rebuild a stale index. It prints the command and stops:
+rebuilding implicitly would hide an operational change and make `--check` stop
+being purely verificative.
+
+52 tests.
+
+
 ## 0.3.1 — the graphify backend still dropped duplicates
 
 0.3.0's central promise was that a name defined twice is never resolved by

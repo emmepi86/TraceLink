@@ -289,10 +289,11 @@ class TheSymbolIndexCarriesProvenance(unittest.TestCase):
                             "--backend", "scan", "--out", out],
                            check=True, capture_output=True)
             d = json.load(open(out))
-            self.assertEqual(d["schema_version"], 2)
-            self.assertEqual(d["backend"], "scan")
-            self.assertIn("repo_commit", d)
+            self.assertEqual(d["schema_version"], 3)
+            self.assertEqual(d["indexing"]["backend"], "scan")
+            self.assertIn("repository", d)
             self.assertIsInstance(d["symbols"]["parse_payload"], list)
+            self.assertIn("fingerprint", d["repository"])
 
 
 class EveryBackendPreservesDuplicates(unittest.TestCase):
@@ -407,3 +408,119 @@ class PruningCannotEscapeTheVault(unittest.TestCase):
             subprocess.run([sys.executable, f"{root}/scripts/split.py", "--register", reg,
                             "--out", vault, "--prefix", "RES"], capture_output=True)
             self.assertTrue(os.path.exists(outside), "a file outside the vault was deleted")
+
+
+class FreshnessIsVerifiedNotAssumed(unittest.TestCase):
+    """0.3.x recorded provenance and printed it. It never compared it, so an
+    index built on one commit was used against another without a word — and the
+    changelog claimed staleness "can be detected instead of trusted", which was
+    true of a consumer and not of tracelink."""
+
+    @staticmethod
+    def _index(repo, out):
+        import subprocess
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        subprocess.run([sys.executable, f"{root}/scripts/symbols.py",
+                        "--repo", repo, "--backend", "scan", "--out", out],
+                       check=True, capture_output=True)
+        return json.load(open(out))
+
+    def setUp(self):
+        global json
+        import json
+
+    def test_the_index_does_not_invalidate_itself(self):
+        """Writing symbols.json inside the repository made the tree stale the
+        instant the index was written. Found by a test that indexed into its own
+        fixture directory — the tool was invalidating its own output."""
+        with tempfile.TemporaryDirectory() as tmp:
+            open(os.path.join(tmp, "a.py"), "w").write("def alpha():\n    pass\n")
+            out = os.path.join(tmp, "symbols.json")
+            payload = self._index(tmp, out)
+            self.assertEqual(link.verify_freshness(payload, tmp, out).status, "fresh")
+
+    def test_an_unchanged_tree_is_fresh(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            open(os.path.join(tmp, "a.py"), "w").write("def alpha():\n    pass\n")
+            out = os.path.join(tmp, "s.json")
+            payload = self._index(tmp, out)
+            f = link.verify_freshness(payload, tmp, out)
+        self.assertEqual(f.status, "fresh")
+        self.assertIn("fingerprint-match", f.reasons)
+
+    def test_a_modified_file_is_stale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "a.py")
+            open(src, "w").write("def alpha():\n    pass\n")
+            out = os.path.join(tmp, "s.json")
+            payload = self._index(tmp, out)
+            open(src, "a").write("# changed\n")
+            f = link.verify_freshness(payload, tmp, out)
+        self.assertEqual(f.status, "stale")
+        self.assertIn("fingerprint-mismatch", f.reasons)
+
+    def test_an_added_file_is_stale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            open(os.path.join(tmp, "a.py"), "w").write("def alpha():\n    pass\n")
+            out = os.path.join(tmp, "s.json")
+            payload = self._index(tmp, out)
+            open(os.path.join(tmp, "b.py"), "w").write("def beta():\n    pass\n")
+            f = link.verify_freshness(payload, tmp, out)
+        self.assertEqual(f.status, "stale")
+
+    def test_a_removed_file_is_stale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            open(os.path.join(tmp, "a.py"), "w").write("def alpha():\n    pass\n")
+            open(os.path.join(tmp, "b.py"), "w").write("def beta():\n    pass\n")
+            out = os.path.join(tmp, "s.json")
+            payload = self._index(tmp, out)
+            os.remove(os.path.join(tmp, "b.py"))
+            f = link.verify_freshness(payload, tmp, out)
+        self.assertEqual(f.status, "stale")
+
+    def test_a_legacy_index_is_unknown_not_invalid(self):
+        f = link.verify_freshness({"parse_payload": "src/parser.py:L4"}, ".")
+        self.assertEqual(f.status, "unknown")
+        self.assertIn("legacy-index-without-provenance", f.reasons)
+
+    def test_a_v2_index_with_a_matching_commit_is_still_unknown(self):
+        """A commit proves the checkout, not the working tree. Calling that
+        fresh would claim more than the evidence supports."""
+        import subprocess
+        cur = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
+                             text=True).stdout.strip()
+        f = link.verify_freshness(
+            {"schema_version": 2, "repo_commit": cur, "symbols": {}}, ".")
+        self.assertIn(f.status, ("unknown", "stale"))
+
+    def test_a_corrupt_index_is_invalid(self):
+        f = link.verify_freshness({"symbols": "not a mapping"}, ".")
+        self.assertEqual(f.status, "invalid")
+
+
+class TheFingerprintDependsOnContentAlone(unittest.TestCase):
+    def test_the_path_used_to_reach_the_tree_does_not_matter(self):
+        import symbols
+        root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "examples", "demo-project")
+        a = symbols.fingerprint(root)[0]
+        b = symbols.fingerprint(root + os.sep)[0]
+        c = symbols.fingerprint(os.path.join(root, ".."))[0]
+        self.assertEqual(a, b)
+        self.assertNotEqual(a, c)
+
+    def test_content_change_changes_the_digest(self):
+        import symbols
+        with tempfile.TemporaryDirectory() as tmp:
+            f = os.path.join(tmp, "x.py")
+            open(f, "w").write("a")
+            before = symbols.fingerprint(tmp)[0]
+            open(f, "w").write("b")
+            self.assertNotEqual(before, symbols.fingerprint(tmp)[0])
+
+    def test_it_is_stable_across_runs(self):
+        import symbols
+        with tempfile.TemporaryDirectory() as tmp:
+            for n in ("c.py", "a.py", "b.py"):
+                open(os.path.join(tmp, n), "w").write(f"# {n}\n")
+            self.assertEqual(symbols.fingerprint(tmp)[0], symbols.fingerprint(tmp)[0])

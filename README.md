@@ -197,6 +197,17 @@ tracelink:
 bypasses the length filter — writing `` `id` `` is a deliberate reference, the
 bare word is not.
 
+**Three different properties, and the README used to blur them.**
+
+| property | question |
+|---|---|
+| provenance | which repository and configuration produced this index? |
+| freshness | does it still correspond to the current tree? |
+| completeness | did the scan cover everything it should have? |
+
+`tracelink link --repo . --freshness require` refuses to link against an index
+that is stale, or one whose freshness cannot be established.
+
 **Re-run after code changes.** A stale symbol map points notes at lines that have
 moved, with nothing to indicate anything is wrong. Steps 1 and 3 are cheap;
 wire them into a hook or a make target.

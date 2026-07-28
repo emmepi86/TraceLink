@@ -25,6 +25,7 @@ import collections
 import json
 import os
 import re
+import sys
 from typing import Dict, List, Tuple
 
 #: Names too common to be evidence of anything. A note mentioning "data" should
@@ -238,6 +239,114 @@ def write_atomic(path: str, content: str) -> None:
     os.replace(tmp, path)
 
 
+
+# --------------------------------------------------------------------------- #
+# freshness — is this index still about the repository in front of us?
+# --------------------------------------------------------------------------- #
+
+class Freshness:
+    """Four states, because a boolean cannot express "I do not know".
+
+    The distinctions that matter, each learned from a way of being wrong:
+
+        same commit        != same files      (the working tree can be dirty)
+        clean repository   != same commit
+        provenance present != freshness verified
+        fresh              != complete
+        unknown            != fresh
+
+    `stale` requires positive evidence of divergence. `fresh` requires positive
+    evidence of correspondence. Everything else is `unknown`, and `unknown` is
+    reported as such rather than rounded to the comfortable side.
+    """
+
+    def __init__(self, status, reasons=None, **fields):
+        self.status = status
+        self.reasons = reasons or []
+        self.__dict__.update(fields)
+
+    def as_dict(self):
+        d = {k: v for k, v in self.__dict__.items() if k != "reasons"}
+        d["reasons"] = self.reasons
+        return d
+
+
+def verify_freshness(payload, repo, index_path=None):
+    """Compare an index against the repository it claims to describe."""
+    import sys as _s
+    _s.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    try:
+        from symbols import fingerprint as _fp, repo_state as _rs
+    except Exception:  # noqa: BLE001
+        return Freshness("unknown", ["indexer-unavailable"])
+
+    # A v1 index is a bare mapping with no envelope. It must stay loadable —
+    # rejecting it as invalid would break every vault written before v2 and
+    # punish the user for our schema history.
+    if "symbols" not in payload:
+        if payload and all(isinstance(v, (str, list)) for v in payload.values()):
+            return Freshness("unknown", ["legacy-index-without-provenance"],
+                             partial=False, indexed_commit=None, current_commit=None)
+        return Freshness("invalid", ["not-a-symbol-index"])
+    if not isinstance(payload.get("symbols"), dict):
+        return Freshness("invalid", ["symbols-not-a-mapping"])
+
+    indexing = payload.get("indexing") or {}
+    partial = bool(indexing.get("partial"))
+
+    repo_meta = payload.get("repository") or {}
+    idx_commit = repo_meta.get("commit") or payload.get("repo_commit")
+    idx_dirty = repo_meta.get("dirty")
+    idx_fp = repo_meta.get("fingerprint")
+
+    if idx_commit is None and idx_fp is None:
+        return Freshness("unknown", ["legacy-index-without-provenance"],
+                         partial=partial, indexed_commit=None, current_commit=None)
+
+    _vcs, cur_commit, cur_dirty = _rs(os.path.realpath(repo))
+    common = dict(partial=partial, indexed_commit=idx_commit,
+                  current_commit=cur_commit, indexed_dirty=idx_dirty,
+                  current_dirty=cur_dirty, indexed_fingerprint=idx_fp)
+
+    # The fingerprint is the strongest evidence: it covers uncommitted work and
+    # repositories with no VCS at all, so it is checked first and it decides.
+    if idx_fp:
+        cur_fp, _n, _w = _fp(os.path.realpath(repo), ignore_files=[index_path] if index_path else None)
+        common["current_fingerprint"] = cur_fp
+        if cur_fp == idx_fp:
+            return Freshness("fresh", ["fingerprint-match"], **common)
+        return Freshness("stale", ["fingerprint-mismatch"], **common)
+
+    # v2 index: a commit and nothing else. It can prove divergence but not
+    # correspondence, because the working tree is invisible to it.
+    if cur_commit is None:
+        return Freshness("unknown", ["git-unavailable-or-not-a-repository"], **common)
+    if idx_commit != cur_commit:
+        return Freshness("stale", ["commit-mismatch"], **common)
+    if cur_dirty:
+        return Freshness("stale", ["working-tree-modified"], **common)
+    return Freshness("unknown", ["commit-match-without-fingerprint"], **common)
+
+
+def render_freshness(f, fmt="text"):
+    if fmt == "json":
+        return None
+    lines = [f"index_freshness:   {f.status}"]
+    for r in f.reasons:
+        lines.append(f"reason:            {r}")
+    for label, attr in (("indexed_commit", "indexed_commit"),
+                        ("current_commit", "current_commit")):
+        v = getattr(f, attr, None)
+        if v:
+            lines.append(f"{label}:    {v[:12]}")
+    if getattr(f, "partial", False):
+        lines.append("index_completeness: partial — it does not cover the whole repository")
+    if f.status == "stale":
+        lines.append("")
+        lines.append("Run the symbol indexer again before trusting generated links.")
+    return "\n".join(lines)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Cross-link notes and code.")
     ap.add_argument("--vault", required=True)
@@ -251,10 +360,38 @@ def main() -> int:
                     help="report what would change, write nothing; exit 1 if stale")
     ap.add_argument("--explain", action="store_true",
                     help="print why each link was made")
+    ap.add_argument("--repo", default=".",
+                    help="repository the index claims to describe (default .)")
+    ap.add_argument("--freshness", choices=["warn", "require", "ignore"], default="warn",
+                    help="what to do when the index no longer matches the repo")
+    ap.add_argument("--require-fresh-index", action="store_true",
+                    help="alias for --freshness require")
+    ap.add_argument("--allow-partial-index", action="store_true",
+                    help="accept an index whose scan did not complete")
+    ap.add_argument("--format", choices=["text", "json"], default="text")
     args = ap.parse_args()
 
     with open(args.symbols) as fh:
         payload = json.load(fh)
+    mode = "require" if args.require_fresh_index else args.freshness
+    fresh = None
+    if mode != "ignore":
+        fresh = verify_freshness(payload, args.repo, args.symbols)
+        if args.format == "text":
+            print(render_freshness(fresh))
+            print()
+        if fresh.status == "invalid":
+            print("refusing to link against an invalid index", file=sys.stderr)
+            return 2
+        if mode == "require":
+            if fresh.status in ("stale", "unknown"):
+                print(f"refusing to link: index freshness is {fresh.status}", file=sys.stderr)
+                return 1
+            if getattr(fresh, "partial", False) and not args.allow_partial_index:
+                print("refusing to link against a partial index "
+                      "(--allow-partial-index to override)", file=sys.stderr)
+                return 1
+
     symbols = normalise(payload.get("symbols") or payload)
     stop = set(_DEFAULT_STOP) | {s.strip() for s in args.stopwords.split(",") if s.strip()}
 
@@ -335,6 +472,14 @@ def main() -> int:
     if index_stale and not args.check:
         write_atomic(index_path, index_text)
 
+    if args.format == "json":
+        print(json.dumps({
+            "freshness": fresh.as_dict() if fresh else None,
+            "linking": {"notes_scanned": scanned, "notes_with_matches": with_matches,
+                        "notes_modified": modified, "symbols_linked": total_links,
+                        "distinct_symbols": len(backward), "ambiguous_matches": ambiguous},
+        }, indent=1))
+        return 1 if (args.check and (modified or index_stale)) else 0
     print(f"notes_scanned:      {scanned}")
     print(f"notes_with_matches: {with_matches}")
     print(f"notes_modified:     {modified}")
