@@ -1,0 +1,32 @@
+{
+  "name": "tracelink",
+  "owner": {
+    "name": "Massimiliano Paragnani",
+    "url": "https://aosol.cloud"
+  },
+  "metadata": {
+    "description": "TraceLink — link engineering findings to the code they name.",
+    "version": "0.5.0"
+  },
+  "plugins": [
+    {
+      "name": "tracelink",
+      "source": "./",
+      "description": "Turn an append-only findings register into a linked note vault, and connect every finding to the code it names — file and line.",
+      "version": "0.5.0",
+      "author": {
+        "name": "Massimiliano Paragnani",
+        "url": "https://aosol.cloud"
+      },
+      "homepage": "https://github.com/emmepi86/TraceLink",
+      "license": "Apache-2.0",
+      "keywords": [
+        "obsidian",
+        "knowledge-graph",
+        "code-navigation",
+        "engineering-notes",
+        "ctags"
+      ]
+    }
+  ]
+}

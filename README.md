@@ -108,8 +108,17 @@ headings. Those two lines are the whole reason the example exists.
 
 ## Install
 
-**As a Claude Code plugin** — clone anywhere and point Claude Code at it; the
-skill in `skills/tracelink/` is picked up from the plugin manifest.
+**As a Claude Code plugin** — the repository is its own marketplace, so the
+standard flow works directly:
+
+```
+/plugin marketplace add emmepi86/TraceLink
+/plugin install tracelink@tracelink
+```
+
+The first command registers the marketplace declared in
+`.claude-plugin/marketplace.json`; the second installs the plugin it lists. The
+skill in `skills/tracelink/` comes with it.
 
 **Standalone** — clone and run the scripts. Python 3.8+, no dependencies.
 
