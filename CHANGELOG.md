@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.5.1 — safety and diagnostics, from first real-project use
+
+Found by running tracelink against a clinical codebase rather than by review.
+Each was defensible behaviour that left the user with no way forward.
+
+- **A vault belongs to one register.** Splitting a second register into an
+  existing vault rewrote `INDEX.md` to describe only the newcomer and orphaned
+  the notes already there — formally valid, semantically false. The manifest
+  gains `schema_version: 2` with a `register` identity, and `split` refuses a
+  different prefix or a different source file. `--adopt-vault` is the explicit
+  way through; multi-register merging stays deliberate rather than a side
+  effect of running `split` twice. v1 manifests are still read.
+- **Identifiers are accepted as written.** A register whose findings read
+  `### F1` produced nothing, because the pattern required a hyphen. It is now
+  optional and the id is *preserved*: `F1` stays `F1`. Rewriting a human
+  identifier to suit the tool is a cost paid by every reader of the register,
+  forever, to save one regex. Prefixes containing hyphens work, so `P1-CQR-4`
+  splits and sorts — the old `split("-")[-1]` broke on both cases.
+- **Failure says what it found.** "No headings matched" named the pattern it
+  wanted and nothing else. It now prints the first headings and the identifier
+  styles present, with `--inspect` for the full list and no writes.
+- **Notes that link nothing are named, with the cause.**
+  `notes_with_matches: 10` compressed three different problems into one number:
+  a finding written only in prose, candidates filtered as too common, and
+  symbols that were only ambiguous call for three different fixes.
+  `--report-unlinked` lists them, `--require-linked` fails CI on them, and the
+  JSON output carries `unlinked_notes`.
+- **Ambiguous references stay visible.** Withholding the link is right —
+  guessing between two definitions is worse than abstaining — but dropping the
+  reference from `CODE-INDEX.md` left silence exactly where the answer was two
+  answers. They now have their own section with the referencing notes and every
+  candidate.
+- **README documents the editorial contract.** Linking is lexical: explicit
+  identifiers and qualified names produce strong links, prose does not.
+
+77 tests.
+
 ## Unreleased
 
 - **Graphify line locations no longer crash indexing.** `source_location`
