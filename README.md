@@ -114,21 +114,30 @@ skill in `skills/tracelink/` is picked up from the plugin manifest.
 **Standalone** — clone and run the scripts. Python 3.8+, no dependencies.
 
 ```bash
+pipx install tracelink        # or: pip install tracelink
+tracelink --help
+```
+
+Or from a checkout, with nothing installed — the scripts work as they always
+have:
+
+```bash
 git clone https://github.com/emmepi86/TraceLink
 cd TraceLink
+python3 scripts/symbols.py --help
 ```
 
 ## Use
 
 ```bash
 # 1. symbol map: identifier -> file:line
-python3 scripts/symbols.py --repo /path/to/code --out symbols.json
+tracelink index --repo /path/to/code --out symbols.json
 
 # 2. register -> vault
-python3 scripts/split.py --register FINDINGS.md --out vault/ --prefix RES
+tracelink split --register FINDINGS.md --out vault/ --prefix RES
 
-# 3. cross-link, both directions
-python3 scripts/link.py --vault vault/ --symbols symbols.json
+# 3. cross-link, both directions, with a freshness check
+tracelink link --vault vault/ --symbols symbols.json --repo /path/to/code
 ```
 
 The original register is never modified.

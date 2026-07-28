@@ -11,10 +11,10 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-import link  # noqa: E402
-from split import classify, severity  # noqa: E402
+from tracelink import linker as link  # noqa: E402
+from tracelink.splitter import classify, severity, note_body  # noqa: E402
 
 SYMS = {"parse_payload": "src/parser.py:L4", "severity": "scripts/split.py:L60"}
 _LOC = {"path": "src/parser.py", "line": 4, "kind": "py",
@@ -110,7 +110,7 @@ class TheDemoLinksWhatItClaims(unittest.TestCase):
                             "--register", f"{root}/examples/FINDINGS.example.md",
                             "--out", vault, "--prefix", "RES"], check=True,
                            capture_output=True)
-            subprocess.run([sys.executable, f"{root}/scripts/symbols.py",
+            subprocess.run([sys.executable, f"{root}/src/../scripts/symbols.py",
                             "--repo", f"{root}/examples/demo-project",
                             "--backend", "scan", "--out", syms], check=True,
                            capture_output=True)
@@ -141,19 +141,19 @@ class ExplicitGrammarWorksThroughTheCLI(unittest.TestCase):
     """
 
     def test_status_and_severity_reach_the_note(self):
-        from split import note_body
+        pass  # note_body imported at module level
         block = "## RES-01 — example\n\n### STATUS: CLOSED\n### SEVERITY: LOW\n"
         _body, status, sev, _n, _t = note_body("RES-01", [block], "RES")
         self.assertEqual(status, "closed")
         self.assertEqual(sev, "low")
 
     def test_bracket_severity_still_works(self):
-        from split import note_body
+        pass  # note_body imported at module level
         _b, status, sev, _n, _t = note_body("RES-01", ["## RES-01 — x [HIGH]\n"], "RES")
         self.assertEqual((status, sev), ("open", "high"))
 
     def test_a_body_mentioning_another_closure_does_not_close_the_note(self):
-        from split import note_body
+        pass  # note_body imported at module level
         block = "## RES-02 — x [MEDIUM]\n\nThe earlier RES-01 finding is CLOSED, but this is open.\n"
         _b, status, _sev, _n, _t = note_body("RES-02", [block], "RES")
         self.assertEqual(status, "open")
@@ -161,7 +161,7 @@ class ExplicitGrammarWorksThroughTheCLI(unittest.TestCase):
 
 class NotesAreOwnedAndPruned(unittest.TestCase):
     def test_generated_notes_carry_the_ownership_marker(self):
-        from split import note_body
+        pass  # note_body imported at module level
         body, *_ = note_body("RES-01", ["## RES-01 — x\n"], "RES")
         self.assertIn("tracelink_schema: 1", body)
 
@@ -195,7 +195,7 @@ class TheDemoLinksExactlyTheseSymbols(unittest.TestCase):
             for cmd in (
                 [f"{root}/scripts/split.py", "--register",
                  f"{root}/examples/FINDINGS.example.md", "--out", vault, "--prefix", "RES"],
-                [f"{root}/scripts/symbols.py", "--repo",
+                [f"{root}/src/../scripts/symbols.py", "--repo",
                  f"{root}/examples/demo-project", "--backend", "scan", "--out", syms],
                 [f"{root}/scripts/link.py", "--vault", vault, "--symbols", syms],
             ):
@@ -218,7 +218,7 @@ class TheDemoLinksExactlyTheseSymbols(unittest.TestCase):
             for cmd in (
                 [f"{root}/scripts/split.py", "--register",
                  f"{root}/examples/FINDINGS.example.md", "--out", vault, "--prefix", "RES"],
-                [f"{root}/scripts/symbols.py", "--repo",
+                [f"{root}/src/../scripts/symbols.py", "--repo",
                  f"{root}/examples/demo-project", "--backend", "scan", "--out", syms],
                 [f"{root}/scripts/link.py", "--vault", vault, "--symbols", syms],
             ):
@@ -284,7 +284,7 @@ class TheSymbolIndexCarriesProvenance(unittest.TestCase):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         with tempfile.TemporaryDirectory() as tmp:
             out = os.path.join(tmp, "s.json")
-            subprocess.run([sys.executable, f"{root}/scripts/symbols.py",
+            subprocess.run([sys.executable, f"{root}/src/../scripts/symbols.py",
                             "--repo", f"{root}/examples/demo-project",
                             "--backend", "scan", "--out", out],
                            check=True, capture_output=True)
@@ -304,7 +304,7 @@ class EveryBackendPreservesDuplicates(unittest.TestCase):
 
     def test_graphify(self):
         import json as j
-        import symbols
+        from tracelink import symbol_index as symbols
         with tempfile.TemporaryDirectory() as tmp:
             os.makedirs(os.path.join(tmp, "graphify-out"))
             j.dump({"nodes": [
@@ -315,7 +315,7 @@ class EveryBackendPreservesDuplicates(unittest.TestCase):
         self.assertEqual(len(syms["validate"]), 2)
 
     def test_scan(self):
-        import symbols
+        from tracelink import symbol_index as symbols
         with tempfile.TemporaryDirectory() as tmp:
             os.makedirs(os.path.join(tmp, "a"))
             os.makedirs(os.path.join(tmp, "b"))
@@ -325,7 +325,7 @@ class EveryBackendPreservesDuplicates(unittest.TestCase):
         self.assertEqual(len(syms["validate"]), 2)
 
     def test_ctags(self):
-        import symbols
+        from tracelink import symbol_index as symbols
         with tempfile.TemporaryDirectory() as tmp:
             open(os.path.join(tmp, "tags"), "w").write(
                 "validate\tsrc/users.py\t/^def validate/;\"\tf\tline:10\n"
@@ -336,7 +336,7 @@ class EveryBackendPreservesDuplicates(unittest.TestCase):
     def test_qualified_name_is_null_when_the_backend_cannot_qualify(self):
         """Repeating the bare name and calling it qualified would make the
         qualified-name disambiguation silently useless."""
-        import symbols
+        from tracelink import symbol_index as symbols
         with tempfile.TemporaryDirectory() as tmp:
             open(os.path.join(tmp, "tags"), "w").write(
                 "validate\tsrc/users.py\t/^def validate/;\"\tf\tline:10\n")
@@ -420,7 +420,7 @@ class FreshnessIsVerifiedNotAssumed(unittest.TestCase):
     def _index(repo, out):
         import subprocess
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        subprocess.run([sys.executable, f"{root}/scripts/symbols.py",
+        subprocess.run([sys.executable, f"{root}/src/../scripts/symbols.py",
                         "--repo", repo, "--backend", "scan", "--out", out],
                        check=True, capture_output=True)
         return json.load(open(out))
@@ -530,7 +530,7 @@ class FreshnessIsVerifiedNotAssumed(unittest.TestCase):
 
 class TheFingerprintDependsOnContentAlone(unittest.TestCase):
     def test_the_path_used_to_reach_the_tree_does_not_matter(self):
-        import symbols
+        from tracelink import symbol_index as symbols
         root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                             "examples", "demo-project")
         a = symbols.fingerprint(root)[0]
@@ -540,7 +540,7 @@ class TheFingerprintDependsOnContentAlone(unittest.TestCase):
         self.assertNotEqual(a, c)
 
     def test_content_change_changes_the_digest(self):
-        import symbols
+        from tracelink import symbol_index as symbols
         with tempfile.TemporaryDirectory() as tmp:
             f = os.path.join(tmp, "x.py")
             open(f, "w").write("a")
@@ -549,7 +549,7 @@ class TheFingerprintDependsOnContentAlone(unittest.TestCase):
             self.assertNotEqual(before, symbols.fingerprint(tmp)[0])
 
     def test_it_is_stable_across_runs(self):
-        import symbols
+        from tracelink import symbol_index as symbols
         with tempfile.TemporaryDirectory() as tmp:
             for n in ("c.py", "a.py", "b.py"):
                 open(os.path.join(tmp, n), "w").write(f"# {n}\n")
@@ -572,7 +572,7 @@ class FreshnessTracksTheIndexScopeNotTheRepository(unittest.TestCase):
         import subprocess
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         out = os.path.join(tmp, "s.json")
-        subprocess.run([sys.executable, f"{root}/scripts/symbols.py", "--repo", tmp,
+        subprocess.run([sys.executable, f"{root}/src/../scripts/symbols.py", "--repo", tmp,
                         "--backend", "scan", "--out", out], check=True, capture_output=True)
         import json as j
         return j.load(open(out)), out
@@ -635,7 +635,7 @@ class FreshnessTracksTheIndexScopeNotTheRepository(unittest.TestCase):
 
 class TruncationIsNeverSilent(unittest.TestCase):
     def test_the_scan_limit_is_reported(self):
-        import symbols
+        from tracelink import symbol_index as symbols
         with tempfile.TemporaryDirectory() as tmp:
             for i in range(5):
                 open(os.path.join(tmp, f"f{i}.py"), "w").write("def x():\n    pass\n")
@@ -645,7 +645,7 @@ class TruncationIsNeverSilent(unittest.TestCase):
     def test_build_keeps_notes_from_backends_that_failed_first(self):
         """Returning as soon as a backend produced symbols discarded the note,
         so a truncated scan could report partial: false."""
-        import symbols
+        from tracelink import symbol_index as symbols
         with tempfile.TemporaryDirectory() as tmp:
             open(os.path.join(tmp, "a.py"), "w").write("def alpha():\n    pass\n")
             _s, used, notes, _c = symbols.build(tmp, "auto")

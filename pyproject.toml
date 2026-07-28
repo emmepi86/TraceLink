@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tracelink"
+version = "0.5.0"
+description = "Link engineering findings to the code they name — file and line, both directions."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = []
+keywords = ["obsidian", "knowledge-graph", "code-navigation", "traceability", "audit"]
+authors = [{ name = "Massimiliano Paragnani", email = "info@aosol.cloud" }]
+
+[project.urls]
+Homepage = "https://github.com/emmepi86/TraceLink"
+Changelog = "https://github.com/emmepi86/TraceLink/blob/main/CHANGELOG.md"
+
+[project.scripts]
+tracelink = "tracelink.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tracelink"]

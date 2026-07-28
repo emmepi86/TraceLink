@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.5.0 — a package and one command
+
+No behaviour changes. The three scripts become a package with a single entry
+point, and the two legacy schema reads found during the 0.4.2 review are fixed.
+
+- **`pipx install tracelink`**, then `tracelink index | split | link`. Built as
+  a wheel and verified by installing it into a clean virtualenv and running the
+  full sequence from the installed command, not from the checkout.
+- **`src/tracelink/`** with `symbol_index`, `splitter`, `linker`, `cli`.
+- **The scripts still work.** `python3 scripts/link.py ...` behaves exactly as
+  before, because a tool that only runs after installation is a tool people
+  cannot try before deciding whether to install it.
+- **`requires-python = ">=3.11"`.** 3.8 and 3.9 are out of support; shipping a
+  2026 release against them claims a compatibility nobody is testing.
+- Still **no runtime dependencies**.
+
+Fixed, both reading v2 fields from a v3 index:
+
+- `CODE-INDEX.md` reported `backend: unknown` while the backend was known.
+- The final line printed `repo_commit`, absent in v3, so it printed nothing —
+  duplicating the freshness block above it, and wrongly.
+
+63 tests.
+
+
 ## 0.4.2 — the scope is now persisted, so the linker can reproduce it
 
 0.4.1 scoped the fingerprint at indexing time and did not record WHAT it had
