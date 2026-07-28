@@ -368,6 +368,10 @@ def main() -> int:
                     help="cap per note, applied AFTER ranking (default 8)")
     ap.add_argument("--min-len", type=int, default=7,
                     help="minimum identifier length outside backticks (default 7)")
+    ap.add_argument("--report-unlinked", action="store_true",
+                    help="list every note that linked nothing, with the reason")
+    ap.add_argument("--require-linked", action="store_true",
+                    help="exit 1 if any note linked nothing (for CI)")
     ap.add_argument("--stopwords", default="", help="comma-separated extra names to ignore")
     ap.add_argument("--check", action="store_true",
                     help="report what would change, write nothing; exit 1 if stale")
@@ -437,6 +441,14 @@ def main() -> int:
         return 1
 
     backward: Dict[str, List[str]] = collections.defaultdict(list)
+    # Symbols a note referenced but could not be linked to one place. Kept per
+    # symbol so the inverse index can say "referenced, ambiguous" instead of
+    # dropping the reference entirely — a note asking about `row_fingerprint`
+    # got no answer precisely where the answer was two answers.
+    ambiguous_refs: Dict[str, List[str]] = collections.defaultdict(list)
+    # Why a note linked nothing. "No link" has several causes and they call for
+    # different actions: rewrite the finding, widen the index, or disambiguate.
+    unlinked: List[Dict[str, str]] = []
     scanned = with_matches = modified = total_links = ambiguous = 0
 
     for name in notes:
@@ -454,7 +466,19 @@ def main() -> int:
             links.append((sym, loc, f"{why}/{how}"))
         links = links[: args.max_links]
         ambiguous += len(note_ambiguous)
+        if not links:
+            # Distinguish the causes rather than reporting a single count.
+            known = [w for w in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", body)
+                     if w in symbols]
+            if note_ambiguous:
+                reason = "only-ambiguous"
+            elif known:
+                reason = "all-candidates-filtered"
+            else:
+                reason = "no-identifiers"
+            unlinked.append({"id": os.path.splitext(name)[0], "reason": reason})
         for sym, how in note_ambiguous:
+            ambiguous_refs[sym].append(os.path.splitext(name)[0])
             print(f"AMBIGUOUS {sym} in {name} ({how})")
             for loc in symbols[sym]:
                 print(f"  - {fmt(loc)}")
@@ -493,6 +517,24 @@ def main() -> int:
         refs = " ".join(f"[[{n}]]" for n in sorted({n for n, _ in backward[sym]}))
         loc = sorted({l for _, l in backward[sym]})[0].replace("|", r"\|")
         lines.append(f"| `{sym}` | {loc} | {refs} |")
+
+    if ambiguous_refs:
+        lines += [
+            "",
+            "## Ambiguous references",
+            "",
+            "Named by a note, defined in more than one place. The link is",
+            "withheld because guessing would be worse than abstaining — but the",
+            "reference itself is evidence and is recorded here.",
+            "",
+        ]
+        for sym in sorted(ambiguous_refs):
+            notes_ref = " ".join(f"[[{n}]]" for n in sorted(set(ambiguous_refs[sym])))
+            lines += [f"### `{sym}`", "", f"Referenced by: {notes_ref}", "",
+                      "Candidates:", ""]
+            lines += [f"- {fmt(loc)}" for loc in symbols.get(sym, [])]
+            lines.append("")
+
     index_text = "\n".join(lines) + "\n"
 
     index_path = os.path.join(args.vault, "CODE-INDEX.md")
@@ -509,17 +551,33 @@ def main() -> int:
             "linking": {"notes_scanned": scanned, "notes_with_matches": with_matches,
                         "notes_modified": modified, "symbols_linked": total_links,
                         "distinct_symbols": len(backward), "ambiguous_matches": ambiguous},
+            "unlinked_notes": unlinked,
         }, indent=1))
-        return 1 if (args.check and (modified or index_stale)) else 0
+        failed = (args.check and (modified or index_stale)) or (
+            args.require_linked and unlinked)
+        return 1 if failed else 0
     print(f"notes_scanned:      {scanned}")
     print(f"notes_with_matches: {with_matches}")
     print(f"notes_modified:     {modified}")
     print(f"symbols_linked:     {total_links}")
     print(f"distinct_symbols:   {len(backward)}")
     print(f"ambiguous_matches:  {ambiguous}")
+    print(f"unlinked_notes:     {len(unlinked)}")
+    if unlinked and (args.report_unlinked or args.require_linked):
+        print("\nUNLINKED NOTES\n")
+        explain = {
+            "no-identifiers": "no symbol identifiers found",
+            "all-candidates-filtered": "candidate symbols filtered as common or too short",
+            "only-ambiguous": "only ambiguous symbols found",
+        }
+        for item in unlinked:
+            print(f"{item['id']}\n  reason: {explain[item['reason']]}\n")
     # The freshness block above already prints the commit for every schema.
     # Reading `repo_commit` here reproduced the v2 field on a v3 index and
     # printed nothing — duplicated output that was also wrong.
+    if args.require_linked and unlinked:
+        print(f"require-linked: {len(unlinked)} note(s) linked nothing")
+        return 1
     if args.check:
         stale = modified + (1 if index_stale else 0)
         print(f"check: {stale} file(s) would change")

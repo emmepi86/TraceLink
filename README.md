@@ -249,3 +249,37 @@ Apache-2.0 — see [LICENSE](LICENSE).
 Apache rather than MIT for the explicit patent grant: it makes the boundary of
 what is and is not granted clear, instead of leaving it to implied-licence
 arguments. It is equally permissive — use it inside proprietary software freely.
+
+## Write linkable findings
+
+Linking is lexical. tracelink connects notes to the symbols they **spell out**;
+it does not infer them from prose. This is a contract, not a limitation to work
+around:
+
+```text
+vague prose            -> few, unreliable links
+explicit identifiers   -> strong links
+contradictory evidence -> ambiguity, reported rather than guessed
+```
+
+Weak:
+
+> The narrative pipeline mishandles negations.
+
+Strong:
+
+> `derive_patient_concepts()` mishandles negations before
+> `apply_exclusion_rules()` runs.
+
+Best:
+
+> `concepts.derive_patient_concepts()` in `src/concepts/derive.py` mishandles
+> negations before `rules.apply_exclusion_rules()`.
+
+A qualified name survives a common stem: `cancel` alone is weak evidence in a
+codebase with twenty of them, `watchdog.cancel` is not.
+
+`tracelink link --report-unlinked` names every note that connected to nothing,
+and says which of these it is: no identifiers at all, candidates filtered as too
+common, or only ambiguous ones. Those three call for different fixes.
+
