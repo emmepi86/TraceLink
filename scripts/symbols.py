@@ -55,7 +55,7 @@ def repo_state(repo):
     return "git", commit, (bool(status) if status is not None else None)
 
 
-def fingerprint(repo, exclude=None, ignore_files=None):
+def fingerprint(repo, exclude=None, ignore_files=None, files=None):
     """A content digest of the tree, independent of everything but content.
 
     Deliberately not derived from mtime, inode, filesystem order, absolute path
@@ -71,6 +71,28 @@ def fingerprint(repo, exclude=None, ignore_files=None):
     fingerprint over an unknown subset is not a fingerprint.
     """
     import hashlib
+    if files is not None:
+        # SYMBOL-INDEX freshness, not repository freshness. Hashing the whole
+        # tree made a README, a CHANGELOG or tracelink's own vault mark the
+        # index stale — none of which can change a symbol map. The question is
+        # "did anything that feeds the index change", and only the files the
+        # backend actually read can answer it.
+        root = os.path.realpath(repo)
+        records, warnings, counted = [], [], 0
+        for rel in sorted({f.replace(os.sep, "/") for f in files}):
+            full = os.path.realpath(os.path.join(root, rel))
+            if os.path.commonpath([root, full]) != root:
+                warnings.append({"code": "path-outside-repo", "path": rel})
+                continue
+            try:
+                with open(full, "rb") as fh:
+                    records.append(f"{rel}\0{hashlib.sha256(fh.read()).hexdigest()}\n")
+                counted += 1
+            except Exception as exc:  # noqa: BLE001
+                warnings.append({"code": "file-read-error", "path": rel,
+                                 "message": type(exc).__name__})
+        h = hashlib.sha256("".join(sorted(records)).encode("utf-8")).hexdigest()
+        return f"sha256:{h}", counted, warnings
     skip = set(_SKIP_DIRS) | set(exclude or [])
     # The index must not invalidate itself. Writing symbols.json inside the
     # repository would otherwise make the tree stale the instant it is written —
@@ -127,22 +149,6 @@ def _add(out, name, path, line, kind, qualified):
         bucket.append(loc)
 
 
-def _repo_commit(repo):
-    """Provenance, so a stale index can be detected rather than trusted."""
-    try:
-        import subprocess
-        r = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"],
-                           capture_output=True, text=True, timeout=5)
-        return r.stdout.strip() or None
-    except Exception:  # noqa: BLE001
-        return None
-
-
-# --------------------------------------------------------------------------- #
-# graphify
-# --------------------------------------------------------------------------- #
-
-
 def from_graphify(repo: str) -> Tuple[Dict[str, str], Optional[str]]:
     """Read graphify's graph.json.
 
@@ -155,20 +161,21 @@ def from_graphify(repo: str) -> Tuple[Dict[str, str], Optional[str]]:
     """
     path = os.path.join(repo, "graphify-out", "graph.json")
     if not os.path.exists(path):
-        return {}, f"no graph at {path}"
+        return {}, f"no graph at {path}", []
     try:
         with open(path) as fh:
             data = json.load(fh)
     except Exception as exc:  # noqa: BLE001
-        return {}, f"unreadable graph.json: {type(exc).__name__}"
+        return {}, f"unreadable graph.json: {type(exc).__name__}", []
 
     nodes = data.get("nodes")
     if nodes is None and isinstance(data.get("graph"), dict):
         nodes = data["graph"].get("nodes")
     if not isinstance(nodes, list):
-        return {}, "graph.json has no node list where expected"
+        return {}, "graph.json has no node list where expected", []
 
     out: Dict[str, str] = {}
+    considered = set()
     for n in nodes:
         if not isinstance(n, dict):
             continue
@@ -189,7 +196,8 @@ def from_graphify(repo: str) -> Tuple[Dict[str, str], Optional[str]]:
         norm = (n.get("norm_label") or "").strip()
         qualified = norm if norm and norm != label and "." in norm else None
         _add(out, label, str(src), loc, n.get("file_type") or "", qualified)
-    return out, None
+        considered.add(str(src))
+    return out, None, sorted(considered)
 
 
 # --------------------------------------------------------------------------- #
@@ -207,8 +215,9 @@ def from_ctags(repo: str) -> Tuple[Dict[str, str], Optional[str]]:
     """
     path = os.path.join(repo, "tags")
     if not os.path.exists(path):
-        return {}, f"no tags file at {path} (ctags -R --fields=+n -f tags .)"
+        return {}, f"no tags file at {path} (ctags -R --fields=+n -f tags .)", []
     out: Dict[str, str] = {}
+    considered = set()
     try:
         with open(path, errors="replace") as fh:
             for line in fh:
@@ -227,9 +236,10 @@ def from_ctags(repo: str) -> Tuple[Dict[str, str], Optional[str]]:
                 _add(out, name, fname, m.group(1) if m else None,
                      k.group(1) if k else "",
                      f"{sc.group(1)}.{name}" if sc else None)
+                considered.add(fname)
     except Exception as exc:  # noqa: BLE001
-        return {}, f"unreadable tags: {type(exc).__name__}"
-    return out, None
+        return {}, f"unreadable tags: {type(exc).__name__}", []
+    return out, None, sorted(considered)
 
 
 # --------------------------------------------------------------------------- #
@@ -265,6 +275,7 @@ def from_scan(repo: str, max_files: int = 20000) -> Tuple[Dict[str, str], Option
     """Grep definitions straight out of the tree. Always available."""
     by_ext = dict(_DEF_PATTERNS)
     out: Dict[str, str] = {}
+    considered = []
     seen = 0
     for root, dirs, files in os.walk(repo):
         dirs[:] = [d for d in dirs if d not in _SKIP_DIRS and not d.startswith(".")]
@@ -275,9 +286,10 @@ def from_scan(repo: str, max_files: int = 20000) -> Tuple[Dict[str, str], Option
                 continue
             seen += 1
             if seen > max_files:
-                return out, f"stopped at {max_files} files"
+                return out, f"max-files-reached at {max_files}", sorted(considered)
             full = os.path.join(root, fn)
-            rel = os.path.relpath(full, repo)
+            rel = os.path.relpath(full, repo).replace(os.sep, "/")
+            considered.append(rel)
             try:
                 with open(full, errors="replace") as fh:
                     module = os.path.splitext(os.path.basename(fn))[0]
@@ -288,13 +300,13 @@ def from_scan(repo: str, max_files: int = 20000) -> Tuple[Dict[str, str], Option
                                  f"{module}.{m.group(1)}")
             except Exception:  # noqa: BLE001 - an unreadable file is not fatal
                 continue
-    return out, None
+    return out, None, sorted(considered)
 
 
 BACKENDS = {"graphify": from_graphify, "ctags": from_ctags, "scan": from_scan}
 
 
-def build(repo: str, backend: str = "auto") -> Tuple[Dict[str, str], str, list]:
+def build(repo: str, backend: str = "auto"):
     """Return (symbols, backend_used, notes)."""
     notes = []
     order = ["graphify", "ctags", "scan"] if backend == "auto" else [backend]
@@ -303,12 +315,16 @@ def build(repo: str, backend: str = "auto") -> Tuple[Dict[str, str], str, list]:
         if fn is None:
             notes.append(f"unknown backend {name!r}")
             continue
-        syms, err = fn(repo)
-        if syms:
-            return syms, name, notes
+        syms, err, considered = fn(repo)
+        # The note is recorded BEFORE the early return. Returning as soon as a
+        # backend produced symbols discarded it, so a scan truncated at the file
+        # limit reported `partial: false` — a completeness claim that was simply
+        # untrue.
         if err:
             notes.append(f"{name}: {err}")
-    return {}, "none", notes
+        if syms:
+            return syms, name, notes, considered
+    return {}, "none", notes, []
 
 
 def main() -> int:
@@ -318,7 +334,7 @@ def main() -> int:
     ap.add_argument("--out", default="symbols.json")
     args = ap.parse_args()
 
-    syms, used, notes = build(os.path.abspath(args.repo), args.backend)
+    syms, used, notes, considered = build(os.path.abspath(args.repo), args.backend)
     for n in notes:
         print(f"  note: {n}", file=sys.stderr)
     if not syms:
@@ -328,9 +344,9 @@ def main() -> int:
     ambiguous = sum(1 for v in syms.values() if len(v) > 1)
     repo_abs = os.path.abspath(args.repo)
     vcs, commit, dirty = repo_state(repo_abs)
-    fp, counted, fp_warnings = fingerprint(repo_abs, ignore_files=[args.out])
+    fp, counted, fp_warnings = fingerprint(repo_abs, files=considered)
     config = {"backend": used, "exclude": sorted(_SKIP_DIRS), "max_files": 20000}
-    partial = bool(fp_warnings) or any("stopped at" in n for n in notes)
+    partial = bool(fp_warnings) or any("max-files-reached" in n for n in notes)
     with open(args.out, "w") as fh:
         json.dump({
             "schema_version": 3,
@@ -339,7 +355,8 @@ def main() -> int:
             # unusable from another checkout and leak the author's filesystem.
             "repository": {"root": ".", "vcs": vcs, "commit": commit,
                            "dirty": dirty, "fingerprint": fp,
-                           "files_fingerprinted": counted},
+                           "files_fingerprinted": counted,
+                           "scope": "symbol-index"},
             "indexing": {"backend": used, "backend_version": None,
                          "partial": partial,
                          "warnings": fp_warnings + [{"code": "backend-note", "message": n}

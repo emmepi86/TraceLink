@@ -311,7 +311,7 @@ class EveryBackendPreservesDuplicates(unittest.TestCase):
                 {"label": "validate", "source_file": "src/users.py", "source_location": 10},
                 {"label": "validate", "source_file": "src/payments.py", "source_location": 20},
             ]}, open(os.path.join(tmp, "graphify-out", "graph.json"), "w"))
-            syms, _err = symbols.from_graphify(tmp)
+            syms, _err, _c = symbols.from_graphify(tmp)
         self.assertEqual(len(syms["validate"]), 2)
 
     def test_scan(self):
@@ -321,7 +321,7 @@ class EveryBackendPreservesDuplicates(unittest.TestCase):
             os.makedirs(os.path.join(tmp, "b"))
             open(os.path.join(tmp, "a", "users.py"), "w").write("def validate(x):\n    return x\n")
             open(os.path.join(tmp, "b", "payments.py"), "w").write("def validate(x):\n    return x\n")
-            syms, _err = symbols.from_scan(tmp)
+            syms, _err, _c = symbols.from_scan(tmp)
         self.assertEqual(len(syms["validate"]), 2)
 
     def test_ctags(self):
@@ -330,7 +330,7 @@ class EveryBackendPreservesDuplicates(unittest.TestCase):
             open(os.path.join(tmp, "tags"), "w").write(
                 "validate\tsrc/users.py\t/^def validate/;\"\tf\tline:10\n"
                 "validate\tsrc/payments.py\t/^def validate/;\"\tf\tline:20\n")
-            syms, _err = symbols.from_ctags(tmp)
+            syms, _err, _c = symbols.from_ctags(tmp)
         self.assertEqual(len(syms["validate"]), 2)
 
     def test_qualified_name_is_null_when_the_backend_cannot_qualify(self):
@@ -340,7 +340,7 @@ class EveryBackendPreservesDuplicates(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             open(os.path.join(tmp, "tags"), "w").write(
                 "validate\tsrc/users.py\t/^def validate/;\"\tf\tline:10\n")
-            syms, _err = symbols.from_ctags(tmp)
+            syms, _err, _c = symbols.from_ctags(tmp)
         self.assertIsNone(syms["validate"][0]["qualified_name"])
 
 
@@ -483,15 +483,45 @@ class FreshnessIsVerifiedNotAssumed(unittest.TestCase):
         self.assertEqual(f.status, "unknown")
         self.assertIn("legacy-index-without-provenance", f.reasons)
 
-    def test_a_v2_index_with_a_matching_commit_is_still_unknown(self):
-        """A commit proves the checkout, not the working tree. Calling that
-        fresh would claim more than the evidence supports."""
+    def test_a_v2_index_with_a_matching_commit_on_a_clean_tree_is_unknown(self):
+        """A commit proves the checkout, not the working tree, so a v2 index
+        cannot be called fresh. It also cannot be called stale on a clean tree —
+        there is no evidence of divergence. That is what `unknown` is for.
+
+        The repository must be clean for this: on a dirty tree the correct
+        answer is `stale`, and asserting `unknown` there would be asserting the
+        wrong contract."""
         import subprocess
-        cur = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
-                             text=True).stdout.strip()
-        f = link.verify_freshness(
-            {"schema_version": 2, "repo_commit": cur, "symbols": {}}, ".")
-        self.assertIn(f.status, ("unknown", "stale"))
+        with tempfile.TemporaryDirectory() as tmp:
+            for cmd in (["init", "-q"], ["config", "user.email", "t@example.invalid"],
+                        ["config", "user.name", "t"]):
+                subprocess.run(["git", "-C", tmp] + cmd, capture_output=True)
+            open(os.path.join(tmp, "a.py"), "w").write("def alpha():\n    pass\n")
+            subprocess.run(["git", "-C", tmp, "add", "."], capture_output=True)
+            subprocess.run(["git", "-C", tmp, "commit", "-qm", "x"], capture_output=True)
+            cur = subprocess.run(["git", "-C", tmp, "rev-parse", "HEAD"],
+                                 capture_output=True, text=True).stdout.strip()
+            f = link.verify_freshness(
+                {"schema_version": 2, "repo_commit": cur, "symbols": {}}, tmp)
+        self.assertEqual(f.status, "unknown")
+        self.assertIn("commit-match-without-fingerprint", f.reasons)
+
+    def test_a_v2_index_on_a_dirty_tree_is_stale(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            for cmd in (["init", "-q"], ["config", "user.email", "t@example.invalid"],
+                        ["config", "user.name", "t"]):
+                subprocess.run(["git", "-C", tmp] + cmd, capture_output=True)
+            open(os.path.join(tmp, "a.py"), "w").write("def alpha():\n    pass\n")
+            subprocess.run(["git", "-C", tmp, "add", "."], capture_output=True)
+            subprocess.run(["git", "-C", tmp, "commit", "-qm", "x"], capture_output=True)
+            cur = subprocess.run(["git", "-C", tmp, "rev-parse", "HEAD"],
+                                 capture_output=True, text=True).stdout.strip()
+            open(os.path.join(tmp, "a.py"), "a").write("# dirty\n")
+            f = link.verify_freshness(
+                {"schema_version": 2, "repo_commit": cur, "symbols": {}}, tmp)
+        self.assertEqual(f.status, "stale")
+        self.assertIn("working-tree-modified", f.reasons)
 
     def test_a_corrupt_index_is_invalid(self):
         f = link.verify_freshness({"symbols": "not a mapping"}, ".")
@@ -524,3 +554,63 @@ class TheFingerprintDependsOnContentAlone(unittest.TestCase):
             for n in ("c.py", "a.py", "b.py"):
                 open(os.path.join(tmp, n), "w").write(f"# {n}\n")
             self.assertEqual(symbols.fingerprint(tmp)[0], symbols.fingerprint(tmp)[0])
+
+
+class FreshnessTracksTheIndexScopeNotTheRepository(unittest.TestCase):
+    """0.4.0 hashed the whole tree, so a README, a CHANGELOG or tracelink's own
+    vault marked the index stale — none of which can change a symbol map. The
+    question is whether anything that FEEDS the index changed."""
+
+    @staticmethod
+    def _build(tmp):
+        import symbols
+        return symbols.build(tmp, "scan")
+
+    def test_a_readme_change_does_not_stale_the_index(self):
+        import symbols
+        with tempfile.TemporaryDirectory() as tmp:
+            open(os.path.join(tmp, "a.py"), "w").write("def alpha():\n    pass\n")
+            _s, _u, _n, considered = self._build(tmp)
+            before = symbols.fingerprint(tmp, files=considered)[0]
+            open(os.path.join(tmp, "README.md"), "w").write("# docs\n")
+            self.assertEqual(before, symbols.fingerprint(tmp, files=considered)[0])
+
+    def test_a_source_change_does(self):
+        import symbols
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "a.py")
+            open(src, "w").write("def alpha():\n    pass\n")
+            _s, _u, _n, considered = self._build(tmp)
+            before = symbols.fingerprint(tmp, files=considered)[0]
+            open(src, "a").write("# changed\n")
+            self.assertNotEqual(before, symbols.fingerprint(tmp, files=considered)[0])
+
+    def test_a_generated_vault_inside_the_repo_does_not_stale_it(self):
+        import symbols
+        with tempfile.TemporaryDirectory() as tmp:
+            open(os.path.join(tmp, "a.py"), "w").write("def alpha():\n    pass\n")
+            _s, _u, _n, considered = self._build(tmp)
+            before = symbols.fingerprint(tmp, files=considered)[0]
+            os.makedirs(os.path.join(tmp, "vault"))
+            open(os.path.join(tmp, "vault", "RES-01.md"), "w").write("---\nid: RES-01\n---\n")
+            self.assertEqual(before, symbols.fingerprint(tmp, files=considered)[0])
+
+
+class TruncationIsNeverSilent(unittest.TestCase):
+    def test_the_scan_limit_is_reported(self):
+        import symbols
+        with tempfile.TemporaryDirectory() as tmp:
+            for i in range(5):
+                open(os.path.join(tmp, f"f{i}.py"), "w").write("def x():\n    pass\n")
+            _syms, err, _c = symbols.from_scan(tmp, max_files=1)
+        self.assertIn("max-files-reached", err or "")
+
+    def test_build_keeps_notes_from_backends_that_failed_first(self):
+        """Returning as soon as a backend produced symbols discarded the note,
+        so a truncated scan could report partial: false."""
+        import symbols
+        with tempfile.TemporaryDirectory() as tmp:
+            open(os.path.join(tmp, "a.py"), "w").write("def alpha():\n    pass\n")
+            _s, used, notes, _c = symbols.build(tmp, "auto")
+        self.assertEqual(used, "scan")
+        self.assertTrue(notes, "notes from graphify/ctags were discarded")

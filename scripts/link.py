@@ -380,17 +380,29 @@ def main() -> int:
         if args.format == "text":
             print(render_freshness(fresh))
             print()
+        # The diagnostic is emitted even when we refuse to link. A CI consumer
+        # asking for JSON and receiving prose on stderr has been given nothing
+        # it can act on — the machine-readable promise has to hold on the
+        # failure path especially, since that is the path it exists for.
+        refusal = None
         if fresh.status == "invalid":
-            print("refusing to link against an invalid index", file=sys.stderr)
-            return 2
-        if mode == "require":
+            refusal = ("invalid-index", 2)
+        elif mode == "require":
             if fresh.status in ("stale", "unknown"):
-                print(f"refusing to link: index freshness is {fresh.status}", file=sys.stderr)
-                return 1
-            if getattr(fresh, "partial", False) and not args.allow_partial_index:
-                print("refusing to link against a partial index "
-                      "(--allow-partial-index to override)", file=sys.stderr)
-                return 1
+                refusal = (f"freshness-{fresh.status}", 1)
+            elif getattr(fresh, "partial", False) and not args.allow_partial_index:
+                refusal = ("partial-index", 1)
+        if refusal:
+            reason, code = refusal
+            if args.format == "json":
+                print(json.dumps({"ok": False, "exit_reason": reason,
+                                  "freshness": fresh.as_dict(), "linking": None}, indent=1))
+            else:
+                print(f"refusing to link: {reason}", file=sys.stderr)
+                if fresh.status == "stale":
+                    print("\nSuggested action:\n  python3 scripts/symbols.py "
+                          f"--repo {args.repo} --out {args.symbols}", file=sys.stderr)
+            return code
 
     symbols = normalise(payload.get("symbols") or payload)
     stop = set(_DEFAULT_STOP) | {s.strip() for s in args.stopwords.split(",") if s.strip()}
@@ -474,6 +486,8 @@ def main() -> int:
 
     if args.format == "json":
         print(json.dumps({
+            "ok": not (args.check and (modified or index_stale)),
+            "exit_reason": None,
             "freshness": fresh.as_dict() if fresh else None,
             "linking": {"notes_scanned": scanned, "notes_with_matches": with_matches,
                         "notes_modified": modified, "symbols_linked": total_links,

@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.4.1 — freshness of the index, not of the repository
+
+0.4.0 answered the wrong question. It hashed every file in the tree, so a
+README, a CHANGELOG or tracelink's own vault marked the index stale — none of
+which can change a symbol map. "Something changed" and "the symbol index
+changed" were treated as the same statement.
+
+- **The fingerprint now covers the files the backend actually read.** Each
+  backend returns its scope: extensions it parsed (`scan`), paths in the tags
+  file (`ctags`), `source_file` of the nodes (`graphify`). Same family as the
+  `symbols.json` fix in 0.4.0, generalised — the tool no longer invalidates
+  itself through anything it or its user writes alongside the code.
+- **`partial` survives.** `build()` returned as soon as a backend produced
+  symbols, discarding the note that came with them, so a scan truncated at the
+  file limit reported `partial: false` — a completeness claim that was untrue.
+  The note is recorded before the return.
+- **JSON is emitted on the failure path too.** `--format json --freshness
+  require` printed prose to stderr and exited, giving a CI consumer nothing
+  machine-readable exactly where it needs it. The payload now always carries
+  `ok` and `exit_reason`.
+- **Two contract tests made exact.** The v2-index case asserted `unknown or
+  stale`; the contract is `unknown` on a clean tree and `stale` on a dirty one,
+  and both are now pinned with a repository built for the purpose. The previous
+  looseness would have hidden a regression.
+- Removed `_repo_commit`, duplicated by `repo_state` and still carrying a
+  comment describing behaviour that no longer existed.
+
+58 tests.
+
+
 ## 0.4.0 — freshness is verified, not recorded
 
 0.3.x stored provenance and printed it. It never compared it, so an index built
