@@ -314,6 +314,54 @@ class EveryBackendPreservesDuplicates(unittest.TestCase):
             syms, _err, _c = symbols.from_graphify(tmp)
         self.assertEqual(len(syms["validate"]), 2)
 
+    def test_graphify_accepts_display_line_locations(self):
+        import json as j
+        from tracelink import symbol_index as symbols
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "graphify-out"))
+            graph_path = os.path.join(tmp, "graphify-out", "graph.json")
+            with open(graph_path, "w") as graph_file:
+                j.dump({"nodes": [
+                    {"label": "from_prefixed", "source_file": "src/a.py",
+                     "source_location": "L88"},
+                    {"label": "from_numeric", "source_file": "src/b.py",
+                     "source_location": "89"},
+                    {"label": "from_range", "source_file": "src/c.py",
+                     "source_location": "L90-L96"},
+                    {"label": "unknown_location", "source_file": "src/d.py",
+                     "source_location": "not-a-line"},
+                ]}, graph_file)
+            syms, err, _considered = symbols.from_graphify(tmp)
+
+        self.assertIsNone(err)
+        self.assertEqual(syms["from_prefixed"][0]["line"], 88)
+        self.assertEqual(syms["from_numeric"][0]["line"], 89)
+        self.assertEqual(syms["from_range"][0]["line"], 90)
+        self.assertIsNone(syms["unknown_location"][0]["line"])
+
+    def test_line_location_parser_is_strict_and_fail_open(self):
+        from tracelink.symbol_index import _line_number
+
+        accepted = (
+            (88, 88),
+            (88.0, 88),
+            ("88", 88),
+            ("L88", 88),
+            ("l 88", 88),
+            ("88-94", 88),
+            ("L88-L94", 88),
+            ("L88..L94", 88),
+            ("L88–L94", 88),
+        )
+        for raw, expected in accepted:
+            with self.subTest(raw=raw):
+                self.assertEqual(_line_number(raw), expected)
+
+        for raw in (None, False, True, 0, -1, 88.5, "", "L", "Lx",
+                    "line 88", "L88 trailing", ["L88"], {"line": 88}):
+            with self.subTest(raw=raw):
+                self.assertIsNone(_line_number(raw))
+
     def test_scan(self):
         from tracelink import symbol_index as symbols
         with tempfile.TemporaryDirectory() as tmp:

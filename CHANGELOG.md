@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Graphify line locations no longer crash indexing.** `source_location`
+  accepts numeric lines, display forms such as `L88`, and ranges such as
+  `L88-L94` (anchored to the first line). Unknown shapes retain the symbol with
+  no line number instead of aborting the entire index.
+
 ## 0.5.0 — a package and one command
 
 No behaviour changes. The three scripts become a package with a single entry

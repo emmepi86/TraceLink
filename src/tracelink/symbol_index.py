@@ -173,6 +173,35 @@ def discover_scope(repo, scope):
     return [], "unknown"
 
 
+_LINE_LOCATION_RE = re.compile(
+    r"^[Ll]?\s*(\d+)"
+    r"(?:\s*(?:-|–|—|\.\.)\s*[Ll]?\s*\d+)?$"
+)
+
+
+def _line_number(value):
+    """Return the first line from backend location formats, or ``None``.
+
+    Graphify has emitted both JSON numbers and display-oriented strings such
+    as ``L88`` and ``L88-L94``. The symbol schema stores one anchor line, so a
+    range is represented by its first line. Unknown shapes fail open rather
+    than crashing the whole index or guessing a number from arbitrary text.
+    """
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, float):
+        return int(value) if value.is_integer() and value > 0 else None
+    if not isinstance(value, str):
+        return None
+    match = _LINE_LOCATION_RE.fullmatch(value.strip())
+    if not match:
+        return None
+    line = int(match.group(1))
+    return line if line > 0 else None
+
+
 def _add(out, name, path, line, kind, qualified):
     """Record EVERY definition of a name, not just the first.
 
@@ -182,7 +211,7 @@ def _add(out, name, path, line, kind, qualified):
     filesystem order and came with no warning. Ambiguity is now data, and the
     linker refuses to guess.
     """
-    loc = {"path": path, "line": int(line) if line else None,
+    loc = {"path": path, "line": _line_number(line),
            "kind": kind or "", "qualified_name": qualified}
     bucket = out.setdefault(name, [])
     if not any(b["path"] == loc["path"] and b["line"] == loc["line"] for b in bucket):
