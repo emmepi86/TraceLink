@@ -94,13 +94,21 @@ def from_graphify(repo: str) -> Tuple[Dict[str, str], Optional[str]]:
             continue
         label = (n.get("label") or n.get("name") or "").strip()
         label = label.rstrip("()").lstrip(".")
-        if not label or label in out:
+        # NOT `label in out`: skipping a name already seen dropped every
+        # duplicate definition, so the graphify backend still resolved
+        # homonyms by node order — exactly the defect 0.3.0 claimed to remove.
+        if not label:
             continue
         src = n.get("source_file") or n.get("source") or n.get("file") or ""
         loc = n.get("source_location") or n.get("line")
         if not src:
             continue
-        _add(out, label, str(src), loc, n.get("file_type") or "", label)
+        # `norm_label` is the only qualifying hint graphify exposes; when it
+        # adds nothing, record None rather than repeating the bare name and
+        # calling it qualified.
+        norm = (n.get("norm_label") or "").strip()
+        qualified = norm if norm and norm != label and "." in norm else None
+        _add(out, label, str(src), loc, n.get("file_type") or "", qualified)
     return out, None
 
 
@@ -132,8 +140,13 @@ def from_ctags(repo: str) -> Tuple[Dict[str, str], Optional[str]]:
                 name, fname = parts[0], parts[1]
                 m = re.search(r"line:(\d+)", line)
                 k = re.search(r"\bkind:(\w+)", line)
+                # universal-ctags exposes scope through class:/struct:/
+                # namespace:/scope:. Without one, there is nothing to qualify
+                # with, and None says so honestly.
+                sc = re.search(r"\b(?:class|struct|namespace|scope|module):([\w.]+)", line)
                 _add(out, name, fname, m.group(1) if m else None,
-                     k.group(1) if k else "", name)
+                     k.group(1) if k else "",
+                     f"{sc.group(1)}.{name}" if sc else None)
     except Exception as exc:  # noqa: BLE001
         return {}, f"unreadable tags: {type(exc).__name__}"
     return out, None

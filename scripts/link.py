@@ -56,6 +56,22 @@ _LEGACY_BLOCK = re.compile(r"^## Linked code\n\n(?:- .*\n)*\n?", re.M)
 _GENERATED_LINE = re.compile(r"^Related: .*$", re.M)
 
 
+
+_FM_BLOCK = re.compile(r"\A---\n(.*?)\n---\n", re.S)
+_OWNED = re.compile(r"^tracelink_schema:\s*1\s*$", re.M)
+
+
+def is_owned_note(text: str) -> bool:
+    """Ownership lives in the frontmatter, not anywhere in the file.
+
+    A substring search made a hand-written note that merely MENTIONS
+    `tracelink_schema:` look owned — and therefore rewritable. The guarantee is
+    only worth stating if the marker is structural.
+    """
+    m = _FM_BLOCK.match(text)
+    return bool(m and _OWNED.search(m.group(1)))
+
+
 def matchable(text: str) -> str:
     """The part of a note a human actually wrote.
 
@@ -137,18 +153,16 @@ def fmt(loc: dict) -> str:
 
 
 def disambiguate(name: str, locations: list, text: str, overrides: dict):
-    """Pick a location only when the note itself says which one.
+    """Pick a location only when the evidence points at exactly one.
 
-    A name defined in two places is not evidence for either. v1 linked to
-    whichever the backend returned first — an answer that depended on filesystem
-    order and carried no warning. The rule now: a symbol is linked when there is
-    exactly one definition, or when the note disambiguates it. Otherwise it is
-    reported as ambiguous and left alone.
+    Two candidates supported by the note are not a tie to break — they are the
+    author naming both. Returning the first was the same defect as v1 resolving
+    duplicates by filesystem order, moved one level up.
 
-    Three ways to disambiguate, in order:
-      the note names the qualified form (`payments.validate`)
-      the note mentions the defining path
-      the note's frontmatter overrides it explicitly
+    An explicit override may win over textual evidence because it is a
+    structured decision. A qualified name and a path are both authorial
+    evidence of the same weight: when they disagree, that is a conflict to
+    report, not a precedence to invent.
     """
     if name in overrides:
         want = overrides[name]
@@ -158,13 +172,22 @@ def disambiguate(name: str, locations: list, text: str, overrides: dict):
         return None, "override-unmatched"
     if len(locations) == 1:
         return locations[0], "unique"
-    for loc in locations:
-        q = loc.get("qualified_name") or ""
-        if q and q != name and q in text:
-            return loc, "qualified-name"
-    for loc in locations:
-        if loc["path"] in text:
-            return loc, "path-in-note"
+
+    by_qualified = [l for l in locations
+                    if l.get("qualified_name") and l["qualified_name"] != name
+                    and l["qualified_name"] in text]
+    by_path = [l for l in locations if l["path"] in text]
+
+    if len(by_qualified) > 1:
+        return None, "multiple-qualified-names"
+    if len(by_path) > 1:
+        return None, "multiple-paths-in-note"
+    if by_qualified and by_path and by_qualified[0] is not by_path[0]:
+        return None, "qualified-name-and-path-disagree"
+    if len(by_qualified) == 1:
+        return by_qualified[0], "qualified-name"
+    if len(by_path) == 1:
+        return by_path[0], "path-in-note"
     return None, "ambiguous"
 
 
@@ -241,7 +264,7 @@ def main() -> int:
     for p in sorted(os.listdir(args.vault)):
         if not p.endswith(".md") or p in ("INDEX.md", "CODE-INDEX.md"):
             continue
-        if "tracelink_schema:" in open(os.path.join(args.vault, p), errors="replace").read():
+        if is_owned_note(open(os.path.join(args.vault, p), errors="replace").read()):
             notes.append(p)
         else:
             skipped += 1

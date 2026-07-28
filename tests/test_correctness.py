@@ -293,3 +293,117 @@ class TheSymbolIndexCarriesProvenance(unittest.TestCase):
             self.assertEqual(d["backend"], "scan")
             self.assertIn("repo_commit", d)
             self.assertIsInstance(d["symbols"]["parse_payload"], list)
+
+
+class EveryBackendPreservesDuplicates(unittest.TestCase):
+    """0.3.0 shipped `_add()` to keep every definition and left `label in out`
+    in the graphify path, so that backend still resolved homonyms by node
+    order — the exact defect the release claimed to remove. The suite missed it
+    because no test exercised a backend with two same-named definitions."""
+
+    def test_graphify(self):
+        import json as j
+        import symbols
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "graphify-out"))
+            j.dump({"nodes": [
+                {"label": "validate", "source_file": "src/users.py", "source_location": 10},
+                {"label": "validate", "source_file": "src/payments.py", "source_location": 20},
+            ]}, open(os.path.join(tmp, "graphify-out", "graph.json"), "w"))
+            syms, _err = symbols.from_graphify(tmp)
+        self.assertEqual(len(syms["validate"]), 2)
+
+    def test_scan(self):
+        import symbols
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "a"))
+            os.makedirs(os.path.join(tmp, "b"))
+            open(os.path.join(tmp, "a", "users.py"), "w").write("def validate(x):\n    return x\n")
+            open(os.path.join(tmp, "b", "payments.py"), "w").write("def validate(x):\n    return x\n")
+            syms, _err = symbols.from_scan(tmp)
+        self.assertEqual(len(syms["validate"]), 2)
+
+    def test_ctags(self):
+        import symbols
+        with tempfile.TemporaryDirectory() as tmp:
+            open(os.path.join(tmp, "tags"), "w").write(
+                "validate\tsrc/users.py\t/^def validate/;\"\tf\tline:10\n"
+                "validate\tsrc/payments.py\t/^def validate/;\"\tf\tline:20\n")
+            syms, _err = symbols.from_ctags(tmp)
+        self.assertEqual(len(syms["validate"]), 2)
+
+    def test_qualified_name_is_null_when_the_backend_cannot_qualify(self):
+        """Repeating the bare name and calling it qualified would make the
+        qualified-name disambiguation silently useless."""
+        import symbols
+        with tempfile.TemporaryDirectory() as tmp:
+            open(os.path.join(tmp, "tags"), "w").write(
+                "validate\tsrc/users.py\t/^def validate/;\"\tf\tline:10\n")
+            syms, _err = symbols.from_ctags(tmp)
+        self.assertIsNone(syms["validate"][0]["qualified_name"])
+
+
+class ContradictoryEvidenceStaysAmbiguous(unittest.TestCase):
+    TWO = [
+        {"path": "src/users.py", "line": 31, "kind": "py", "qualified_name": "users.validate"},
+        {"path": "src/payments.py", "line": 74, "kind": "py", "qualified_name": "payments.validate"},
+    ]
+
+    def test_two_qualified_names(self):
+        _loc, how = link.disambiguate(
+            "validate", self.TWO, "`users.validate` differs from `payments.validate`.", {})
+        self.assertEqual(how, "multiple-qualified-names")
+
+    def test_two_paths(self):
+        _loc, how = link.disambiguate(
+            "validate", self.TWO, "compares src/users.py and src/payments.py.", {})
+        self.assertEqual(how, "multiple-paths-in-note")
+
+    def test_qualified_name_and_path_disagree(self):
+        """Both are authorial evidence of the same weight. Inventing a
+        precedence between them would be the tool deciding, not the author."""
+        _loc, how = link.disambiguate(
+            "validate", self.TWO,
+            "`users.validate` has the bug described in src/payments.py.", {})
+        self.assertEqual(how, "qualified-name-and-path-disagree")
+
+    def test_they_agree(self):
+        loc, how = link.disambiguate(
+            "validate", self.TWO,
+            "`payments.validate` in src/payments.py is the one.", {})
+        self.assertEqual(loc["path"], "src/payments.py")
+
+    def test_a_single_qualified_name_still_resolves(self):
+        loc, how = link.disambiguate("validate", self.TWO, "see `payments.validate`.", {})
+        self.assertEqual((loc["path"], how), ("src/payments.py", "qualified-name"))
+
+
+class OwnershipIsStructural(unittest.TestCase):
+    def test_the_marker_in_prose_does_not_grant_ownership(self):
+        self.assertFalse(link.is_owned_note(
+            "# my notes\n\ntracelink recognises notes by `tracelink_schema: 1`.\n"))
+
+    def test_the_marker_in_frontmatter_does(self):
+        self.assertTrue(link.is_owned_note("---\ntracelink_schema: 1\nid: RES-01\n---\n\n# x\n"))
+
+    def test_no_frontmatter_is_not_owned(self):
+        self.assertFalse(link.is_owned_note("tracelink_schema: 1\n\n# x\n"))
+
+
+class PruningCannotEscapeTheVault(unittest.TestCase):
+    def test_a_traversing_manifest_entry_is_refused(self):
+        import json as j
+        import subprocess
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with tempfile.TemporaryDirectory() as tmp:
+            vault = os.path.join(tmp, "v")
+            os.makedirs(vault)
+            outside = os.path.join(tmp, "important.md")
+            open(outside, "w").write("---\ntracelink_schema: 1\n---\n\n# not yours\n")
+            j.dump({"schema_version": 1, "generated_notes": ["../important.md"]},
+                   open(os.path.join(vault, ".tracelink-manifest.json"), "w"))
+            reg = os.path.join(tmp, "F.md")
+            open(reg, "w").write("## RES-01 — x\nbody\n")
+            subprocess.run([sys.executable, f"{root}/scripts/split.py", "--register", reg,
+                            "--out", vault, "--prefix", "RES"], capture_output=True)
+            self.assertTrue(os.path.exists(outside), "a file outside the vault was deleted")

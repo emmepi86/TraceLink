@@ -185,9 +185,24 @@ def main() -> int:
             previous = []
     current = [f"{r[0]}.md" for r in rows]
     pruned = 0
+    root = os.path.realpath(args.out)
+    safe = re.compile(rf"\A{re.escape(args.prefix)}-\d+\.md\Z")
     for stale in sorted(set(previous) - set(current)):
-        path = os.path.join(args.out, stale)
-        if os.path.exists(path) and "tracelink_schema:" in open(path, errors="replace").read():
+        # A manifest is persisted data, and deletion is irreversible. Validate
+        # the name, keep the path inside the vault, and require the ownership
+        # marker in the frontmatter — three independent conditions, because any
+        # one of them alone has a way to be wrong.
+        if not safe.match(stale):
+            print(f"  warning: refusing unsafe manifest entry {stale!r}")
+            continue
+        path = os.path.realpath(os.path.join(root, stale))
+        if os.path.commonpath([root, path]) != root:
+            print(f"  warning: manifest entry escapes the vault: {stale!r}")
+            continue
+        if not os.path.exists(path):
+            continue
+        head = open(path, errors="replace").read(400)
+        if head.startswith("---") and "tracelink_schema: 1" in head.split("\n---", 1)[0]:
             os.remove(path)
             pruned += 1
     with open(man_path, "w") as fh:
