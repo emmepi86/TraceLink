@@ -133,6 +133,46 @@ def config_fingerprint(config):
     return "sha256:" + hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
+
+def discover_scope(repo, scope):
+    """Recompute the set of files a backend would consider, right now.
+
+    Persisting only the previous file list is not enough: a source file ADDED
+    after indexing would never be hashed, so the fingerprint would match and the
+    index would be called fresh while a new symbol sat unindexed. The scope has
+    to be re-derived, not replayed.
+
+    Returns (files, confidence) where confidence is "exact" when the scope can
+    be rebuilt faithfully and "unknown" when it cannot. The three backends do
+    not have equal powers here and pretending otherwise would be the same class
+    of overclaim this project keeps removing:
+
+      scan      rebuilt exactly from extensions and excludes
+      ctags     only as good as the `tags` file on disk right now
+      graphify  only as good as `graphify-out/graph.json` right now
+    """
+    kind = (scope or {}).get("kind")
+    root = os.path.realpath(repo)
+    if kind == "extensions":
+        exts = set(scope.get("extensions") or [])
+        skip = set(scope.get("exclude") or []) | set(_SKIP_DIRS)
+        files = []
+        for dirpath, dirs, names in os.walk(root):
+            dirs[:] = [d for d in dirs if d not in skip and not d.startswith(".")]
+            for fn in names:
+                if os.path.splitext(fn)[1] in exts:
+                    files.append(os.path.relpath(os.path.join(dirpath, fn), root)
+                                 .replace(os.sep, "/"))
+        return sorted(files), "exact"
+    if kind == "ctags":
+        syms, err, considered = from_ctags(root)
+        return (considered, "exact") if not err else ([], "unknown")
+    if kind == "graphify":
+        syms, err, considered = from_graphify(root)
+        return (considered, "exact") if not err else ([], "unknown")
+    return [], "unknown"
+
+
 def _add(out, name, path, line, kind, qualified):
     """Record EVERY definition of a name, not just the first.
 
@@ -345,12 +385,16 @@ def main() -> int:
     repo_abs = os.path.abspath(args.repo)
     vcs, commit, dirty = repo_state(repo_abs)
     fp, counted, fp_warnings = fingerprint(repo_abs, files=considered)
+    scope = ({"kind": "extensions",
+              "extensions": sorted({e for e, _rx in _DEF_PATTERNS}),
+              "exclude": sorted(_SKIP_DIRS)} if used == "scan"
+             else {"kind": used})
     config = {"backend": used, "exclude": sorted(_SKIP_DIRS), "max_files": 20000}
     partial = bool(fp_warnings) or any("max-files-reached" in n for n in notes)
     with open(args.out, "w") as fh:
         json.dump({
             "schema_version": 3,
-            "tracelink_version": "0.4.0",
+            "tracelink_version": "0.4.2",
             # `root` is logical on purpose: an absolute path would make the index
             # unusable from another checkout and leak the author's filesystem.
             "repository": {"root": ".", "vcs": vcs, "commit": commit,
@@ -359,6 +403,12 @@ def main() -> int:
                            "scope": "symbol-index"},
             "indexing": {"backend": used, "backend_version": None,
                          "partial": partial,
+                         # The scope descriptor is what makes the fingerprint
+                         # reproducible by the linker. Without it the verifier
+                         # hashed a different set than the indexer did, and a
+                         # freshly written index came out stale immediately.
+                         "scope": scope,
+                         "files_considered": considered,
                          "warnings": fp_warnings + [{"code": "backend-note", "message": n}
                                                     for n in notes],
                          "configuration": config,

@@ -276,7 +276,8 @@ def verify_freshness(payload, repo, index_path=None):
     import sys as _s
     _s.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     try:
-        from symbols import fingerprint as _fp, repo_state as _rs
+        from symbols import (discover_scope as _ds, fingerprint as _fp,
+                             repo_state as _rs)
     except Exception:  # noqa: BLE001
         return Freshness("unknown", ["indexer-unavailable"])
 
@@ -311,7 +312,18 @@ def verify_freshness(payload, repo, index_path=None):
     # The fingerprint is the strongest evidence: it covers uncommitted work and
     # repositories with no VCS at all, so it is checked first and it decides.
     if idx_fp:
-        cur_fp, _n, _w = _fp(os.path.realpath(repo), ignore_files=[index_path] if index_path else None)
+        scope = indexing.get("scope")
+        if not scope:
+            # A v3 index from 0.4.0/0.4.1 recorded a scoped fingerprint without
+            # recording the scope, so it cannot be reproduced. Saying so is the
+            # honest answer; hashing the whole tree instead would compare two
+            # different sets and call every fresh index stale, which is what
+            # 0.4.1 did.
+            return Freshness("unknown", ["fingerprint-scope-not-recorded"], **common)
+        files, confidence = _ds(os.path.realpath(repo), scope)
+        if confidence != "exact":
+            return Freshness("unknown", ["scope-cannot-be-rebuilt"], **common)
+        cur_fp, _n, _w = _fp(os.path.realpath(repo), files=files)
         common["current_fingerprint"] = cur_fp
         if cur_fp == idx_fp:
             return Freshness("fresh", ["fingerprint-match"], **common)

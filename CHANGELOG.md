@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.4.2 — the scope is now persisted, so the linker can reproduce it
+
+0.4.1 scoped the fingerprint at indexing time and did not record WHAT it had
+scoped. The linker recomputed over the whole tree, so the two digests described
+different sets of files and **a freshly written index came out `stale`
+immediately**. The release was broken end to end.
+
+Its tests could not see it. They compared two direct calls to `fingerprint()`
+and never exercised `verify_freshness` — the caller that failed to pass the
+scope along. Same blindness as the `note_body` case in 0.2.1: *a test that skips
+the caller cannot see the caller's mistake*, twice now, which is why the new
+tests all run through `verify_freshness`.
+
+- **`indexing.scope` and `indexing.files_considered` are persisted**, and the
+  verifier RE-DERIVES the scope rather than replaying the file list. Replaying
+  it would miss a source file added after indexing: never hashed, digest
+  unchanged, `fresh` verdict over an unindexed symbol.
+- **Per-backend honesty.** `scan` rebuilds its scope exactly from extensions and
+  excludes. `ctags` and `graphify` can only be as good as the `tags` file or
+  `graph.json` on disk right now, and return `unknown` when those are missing.
+  Pretending all three verify equally would be the same overclaim this project
+  keeps removing.
+- **A v3 index without a recorded scope is `unknown`**, not silently rehashed
+  against a different set. That covers every index written by 0.4.0 and 0.4.1.
+- `tracelink_version` in the index said `0.4.0` in both later releases.
+
+Verified end to end, through `verify_freshness`:
+
+```
+fresh index      fresh      source modified   stale
+README modified  fresh      source added      stale
+vault written    fresh      source removed    stale
+```
+
+63 tests.
+
+
 ## 0.4.1 — freshness of the index, not of the repository
 
 0.4.0 answered the wrong question. It hashed every file in the tree, so a

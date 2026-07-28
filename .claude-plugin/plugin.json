@@ -1,6 +1,6 @@
 {
   "name": "tracelink",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Turn an append-only findings register into a linked note vault, and connect every finding to the code it names \u2014 file and line.",
   "author": {
     "name": "Massimiliano Paragnani",

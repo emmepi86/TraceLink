@@ -557,43 +557,80 @@ class TheFingerprintDependsOnContentAlone(unittest.TestCase):
 
 
 class FreshnessTracksTheIndexScopeNotTheRepository(unittest.TestCase):
-    """0.4.0 hashed the whole tree, so a README, a CHANGELOG or tracelink's own
-    vault marked the index stale — none of which can change a symbol map. The
-    question is whether anything that FEEDS the index changed."""
+    """These go through `verify_freshness`, not `fingerprint`.
+
+    0.4.1 computed the indexing fingerprint over the backend's scope and
+    recomputed the verification fingerprint over the whole tree, so the two
+    described different sets and a freshly written index came out `stale`
+    immediately. The 0.4.1 tests could not see it: they compared two direct
+    calls to `fingerprint()` and never exercised the caller that failed to pass
+    the scope along — the same blindness as the `note_body` case in 0.2.1.
+    """
 
     @staticmethod
-    def _build(tmp):
-        import symbols
-        return symbols.build(tmp, "scan")
+    def _indexed(tmp):
+        import subprocess
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        out = os.path.join(tmp, "s.json")
+        subprocess.run([sys.executable, f"{root}/scripts/symbols.py", "--repo", tmp,
+                        "--backend", "scan", "--out", out], check=True, capture_output=True)
+        import json as j
+        return j.load(open(out)), out
 
-    def test_a_readme_change_does_not_stale_the_index(self):
-        import symbols
+    def _case(self, mutate):
         with tempfile.TemporaryDirectory() as tmp:
             open(os.path.join(tmp, "a.py"), "w").write("def alpha():\n    pass\n")
-            _s, _u, _n, considered = self._build(tmp)
-            before = symbols.fingerprint(tmp, files=considered)[0]
             open(os.path.join(tmp, "README.md"), "w").write("# docs\n")
-            self.assertEqual(before, symbols.fingerprint(tmp, files=considered)[0])
+            payload, out = self._indexed(tmp)
+            mutate(tmp)
+            return link.verify_freshness(payload, tmp, out).status
 
-    def test_a_source_change_does(self):
-        import symbols
-        with tempfile.TemporaryDirectory() as tmp:
-            src = os.path.join(tmp, "a.py")
-            open(src, "w").write("def alpha():\n    pass\n")
-            _s, _u, _n, considered = self._build(tmp)
-            before = symbols.fingerprint(tmp, files=considered)[0]
-            open(src, "a").write("# changed\n")
-            self.assertNotEqual(before, symbols.fingerprint(tmp, files=considered)[0])
+    def test_a_fresh_index_is_fresh(self):
+        """The regression that shipped in 0.4.1: this returned `stale`."""
+        self.assertEqual(self._case(lambda t: None), "fresh")
 
-    def test_a_generated_vault_inside_the_repo_does_not_stale_it(self):
-        import symbols
+    def test_a_readme_change_stays_fresh(self):
+        self.assertEqual(
+            self._case(lambda t: open(os.path.join(t, "README.md"), "a").write("x")), "fresh")
+
+    def test_a_generated_vault_stays_fresh(self):
+        def mutate(t):
+            os.makedirs(os.path.join(t, "vault"))
+            open(os.path.join(t, "vault", "R.md"), "w").write("---\nid: R\n---\n")
+        self.assertEqual(self._case(mutate), "fresh")
+
+    def test_a_source_change_is_stale(self):
+        self.assertEqual(
+            self._case(lambda t: open(os.path.join(t, "a.py"), "a").write("# x\n")), "stale")
+
+    def test_an_added_source_file_is_stale(self):
+        """Replaying only the recorded file list would miss this: a new source
+        file would never be hashed, the digest would match, and an unindexed
+        symbol would sit behind a `fresh` verdict. The scope is re-derived."""
+        self.assertEqual(
+            self._case(lambda t: open(os.path.join(t, "b.py"), "w").write("def beta(): pass\n")),
+            "stale")
+
+    def test_a_removed_source_file_is_stale(self):
+        self.assertEqual(self._case(lambda t: os.remove(os.path.join(t, "a.py"))), "stale")
+
+    def test_a_v3_index_without_a_recorded_scope_is_unknown(self):
+        """0.4.0 and 0.4.1 wrote a scoped fingerprint without the scope. It
+        cannot be reproduced, and saying so beats hashing a different set."""
+        payload = {"schema_version": 3, "symbols": {},
+                   "repository": {"fingerprint": "sha256:deadbeef"},
+                   "indexing": {"backend": "scan"}}
+        f = link.verify_freshness(payload, ".")
+        self.assertEqual(f.status, "unknown")
+        self.assertIn("fingerprint-scope-not-recorded", f.reasons)
+
+    def test_the_index_records_its_scope(self):
         with tempfile.TemporaryDirectory() as tmp:
-            open(os.path.join(tmp, "a.py"), "w").write("def alpha():\n    pass\n")
-            _s, _u, _n, considered = self._build(tmp)
-            before = symbols.fingerprint(tmp, files=considered)[0]
-            os.makedirs(os.path.join(tmp, "vault"))
-            open(os.path.join(tmp, "vault", "RES-01.md"), "w").write("---\nid: RES-01\n---\n")
-            self.assertEqual(before, symbols.fingerprint(tmp, files=considered)[0])
+            open(os.path.join(tmp, "a.py"), "w").write("def alpha(): pass\n")
+            payload, _out = self._indexed(tmp)
+        self.assertEqual(payload["indexing"]["scope"]["kind"], "extensions")
+        self.assertIn("a.py", payload["indexing"]["files_considered"])
+        self.assertEqual(payload["tracelink_version"], "0.4.2")
 
 
 class TruncationIsNeverSilent(unittest.TestCase):
