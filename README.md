@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="licence" src="https://img.shields.io/badge/licence-Apache--2.0-blue"></a>
-  <img alt="python" src="https://img.shields.io/badge/python-3.8%2B-3776ab">
+  <img alt="python" src="https://img.shields.io/badge/python-3.11%2B-3776ab">
   <img alt="dependencies" src="https://img.shields.io/badge/dependencies-none-success">
   <img alt="network" src="https://img.shields.io/badge/network-none-success">
 </p>
@@ -120,7 +120,7 @@ The first command registers the marketplace declared in
 `.claude-plugin/marketplace.json`; the second installs the plugin it lists. The
 skill in `skills/tracelink/` comes with it.
 
-**Standalone** — clone and run the scripts. Python 3.8+, no dependencies.
+**Standalone** — clone and run the scripts. Python 3.11+, no dependencies.
 
 ```bash
 pipx install tracelink        # or: pip install tracelink
