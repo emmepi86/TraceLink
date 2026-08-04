@@ -3,8 +3,11 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "tracelink"
-version = "0.5.1"
+# PyPI package name. "tracelink" on PyPI is an unrelated third-party project,
+# so the distribution ships as tracelink-vault; the installed command is still
+# `tracelink` (see [project.scripts]).
+name = "tracelink-vault"
+version = "0.6.0"
 description = "Link engineering findings to the code they name — file and line, both directions."
 readme = "README.md"
 license = { file = "LICENSE" }

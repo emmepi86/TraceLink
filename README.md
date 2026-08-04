@@ -120,11 +120,22 @@ The first command registers the marketplace declared in
 `.claude-plugin/marketplace.json`; the second installs the plugin it lists. The
 skill in `skills/tracelink/` comes with it.
 
-**Standalone** — clone and run the scripts. Python 3.11+, no dependencies.
+**Standalone** — Python 3.11+, no dependencies. The PyPI package is
+**`tracelink-vault`**; the installed command is still `tracelink`.
 
 ```bash
-pipx install tracelink        # or: pip install tracelink
+pipx install tracelink-vault  # or: pip install tracelink-vault
 tracelink --help
+```
+
+> ⚠️ `pip install tracelink` (without `-vault`) installs an **unrelated
+> third-party project** that happens to own that name on PyPI. This tool is
+> published as `tracelink-vault`.
+
+Or straight from the repository:
+
+```bash
+pipx install git+https://github.com/emmepi86/TraceLink
 ```
 
 Or from a checkout, with nothing installed — the scripts work as they always

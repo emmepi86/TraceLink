@@ -18,6 +18,8 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: compile
         run: python -m compileall scripts tests
+      - name: versions in lockstep
+        run: python3 scripts/bump.py --check
       - name: unit tests
         run: python -m unittest discover tests -v
       - name: the demo must link what it claims
