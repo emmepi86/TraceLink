@@ -314,7 +314,8 @@ class DottedReferencesNarrowWithoutGuessing(unittest.TestCase):
 
     def test_a_dotted_prefix_resolves_by_path_suffix_when_scan_left_no_qualified_names(self):
         for payments_path in ("src/payments.py", "src/payments/__init__.py",
-                              "src/payments/validate.py"):
+                              "src/payments/validate.py",
+                              "src/payments/validate/__init__.py"):
             with self.subTest(path=payments_path):
                 locs = [
                     {"path": "src/users.py", "line": 31, "kind": "py",
@@ -352,6 +353,70 @@ class DottedReferencesNarrowWithoutGuessing(unittest.TestCase):
             "validate", locs, "`payments.validate` is wrong.", {})
         self.assertIsNone(loc)
         self.assertEqual(how, "dotted-unmatched")
+
+    def test_a_dotted_reference_deeper_than_the_registered_qualified_name_still_resolves(self):
+        """The first cut of dotted resolution returned `dotted-unmatched`
+        before the qualified-substring check ran, de-linking a note that
+        cites `app.payments.validate` when the index registered
+        `payments.validate`. The registered name appears verbatim inside the
+        longer reference — consistent evidence, not a mismatch."""
+        two = [
+            {"path": "src/users.py", "line": 31, "kind": "py",
+             "qualified_name": "users.validate"},
+            {"path": "src/payments.py", "line": 74, "kind": "py",
+             "qualified_name": "payments.validate"},
+        ]
+        loc, how = link.disambiguate(
+            "validate", two, "see `app.payments.validate` for the bug.", {})
+        self.assertEqual((loc["path"], how), ("src/payments.py", "qualified-name"))
+        loc, how = link.disambiguate(
+            "validate", two[1:], "see `app.payments.validate` for the bug.", {})
+        self.assertEqual((loc["path"], how), ("src/payments.py", "unique"))
+
+    def test_an_ambiguous_dotted_prefix_and_a_path_toward_a_third_location_disagree(self):
+        """Two locations satisfy the prefix and the cited path names a third:
+        the path must not win in silence over contradictory dotted evidence —
+        the same conflict the `== 1` guard was written to refuse."""
+        locs = [
+            {"path": "a/payments.py", "line": 1, "kind": "py", "qualified_name": None},
+            {"path": "b/payments.py", "line": 2, "kind": "py", "qualified_name": None},
+            {"path": "src/other.py", "line": 3, "kind": "py", "qualified_name": None},
+        ]
+        loc, how = link.disambiguate(
+            "validate", locs, "`payments.validate` lives in src/other.py.", {})
+        self.assertIsNone(loc)
+        self.assertEqual(how, "dotted-and-path-disagree")
+
+    def test_self_cls_and_this_are_syntax_not_location_prefixes(self):
+        """`self.validate` says no more about where `validate` lives than the
+        bare name does: with one definition it links, with two it stays
+        honestly ambiguous instead of `dotted-unmatched`."""
+        for prefix in ("self", "cls", "this"):
+            with self.subTest(prefix=prefix):
+                text = f"call `{prefix}.validate` here."
+                loc, how = link.disambiguate("validate", self.SCAN[1:], text, {})
+                self.assertEqual((loc["path"], how), ("src/payments.py", "unique"))
+                loc, how = link.disambiguate("validate", self.SCAN, text, {})
+                self.assertEqual((loc, how), (None, "ambiguous"))
+
+    def test_an_attribute_chain_still_names_its_prefix(self):
+        """`payments.validate.errors` contains the reference
+        `payments.validate` — an attribute of the thing is still a naming of
+        the thing, and the prefix narrows as usual."""
+        loc, how = link.disambiguate(
+            "validate", self.SCAN, "`payments.validate.errors` is stale.", {})
+        self.assertEqual((loc["path"], how), ("src/payments.py", "dotted-path"))
+
+    def test_a_bare_dotted_reference_in_prose_still_narrows(self):
+        """Outside backticks the tail enters as a plain identifier subject to
+        --min-len, but the prefix the author typed is still in the text and
+        still disambiguates."""
+        syms = {"validate": self.SCAN}
+        found = link.candidates("payments.validate is wrong.", syms, 7, set())
+        self.assertEqual(found, [("validate", "identifier")])
+        loc, how = link.disambiguate(
+            "validate", self.SCAN, "payments.validate is wrong.", {})
+        self.assertEqual((loc["path"], how), ("src/payments.py", "dotted-path"))
 
     def test_a_dotted_prefix_and_a_cited_path_that_disagree_stay_ambiguous(self):
         loc, how = link.disambiguate(

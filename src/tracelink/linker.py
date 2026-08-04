@@ -46,6 +46,16 @@ _CODE_SPAN = re.compile(r"`([^`\n]{2,80})`")
 #: `payments.validate` — identifiers joined by dots, nothing else. A path in
 #: backticks must not be mistaken for a dotted name via its extension.
 _DOTTED = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+")
+#: `self.validate` is syntax, not evidence of location. These prefixes are
+#: stripped before any dotted reasoning, so the remainder follows the normal
+#: rules for whatever it is — a bare name, or a still-dotted reference.
+_SYNTAX_PREFIXES = ("self.", "cls.", "this.")
+
+
+def _strip_syntax_prefixes(token: str) -> str:
+    while token.startswith(_SYNTAX_PREFIXES):
+        token = token.split(".", 1)[1]
+    return token
 
 _FORWARD_HEADING = "## Linked code"
 _BLOCK_START = "<!-- tracelink:linked-code:start -->"
@@ -120,7 +130,7 @@ def candidates(text: str, symbols: Dict[str, str], min_len: int,
     """
     ranked: Dict[str, str] = {}
     for span in _CODE_SPAN.findall(text):
-        token = span.strip().rstrip("()").lstrip(".")
+        token = _strip_syntax_prefixes(span.strip().rstrip("()").lstrip("."))
         if token in symbols:
             ranked[token] = "inline-code"
         elif _DOTTED.fullmatch(token):
@@ -167,20 +177,48 @@ def fmt(loc: dict) -> str:
 
 def _dotted_refs(name: str, text: str) -> list:
     """Dotted spellings of `name` the note contains: `payments.validate` is a
-    reference to the tail carrying its own disambiguating prefix."""
+    reference to the tail carrying its own disambiguating prefix.
+
+    Sub-chains count: in `payments.validate.errors` the boundary after the
+    name is satisfied by the following dot, so `payments.validate` is
+    extracted as a reference to `validate` — an attribute of the thing is
+    still a naming of the thing.
+
+    `self.`, `cls.` and `this.` are syntax, not evidence of location. They
+    are stripped before anything else, so `self.validate` carries exactly the
+    information of a bare `validate`: no dotted reference at all, the normal
+    min-len and disambiguation rules apply.
+    """
     pat = re.compile(r"\b((?:[A-Za-z_][A-Za-z0-9_]*\.)+" + re.escape(name) + r")\b")
-    return sorted(set(pat.findall(text)))
+    refs = set()
+    for ref in pat.findall(text):
+        ref = _strip_syntax_prefixes(ref)
+        if "." in ref:
+            refs.add(ref)
+    return sorted(refs)
 
 
 def _dotted_matches_qualified(loc: dict, ref: str) -> bool:
+    """The reference and the qualified name may record different depths of
+    the same dotted path: the note may spell more than the index recorded
+    (`app.payments.validate` against a registered `payments.validate`) or
+    less (`payments.validate` against `app.payments.validate`). Containment
+    on whole segments, in either direction, is a match. A qualified name
+    with no prefix of its own says nothing about location and is never
+    matched by containment.
+    """
     q = loc.get("qualified_name")
-    return bool(q) and (q == ref or q.endswith("." + ref))
+    if not q:
+        return False
+    return q == ref or q.endswith("." + ref) or ("." in q and ref.endswith("." + q))
 
 
 def _dotted_matches_path(path: str, ref: str) -> bool:
     """The dotted segments against the final path segments, extension dropped:
-    `payments.validate` matches `.../payments.py`, `.../payments/__init__.py`
-    or `.../payments/validate.py`. Case-sensitive — near enough is a guess.
+    `payments.validate` matches `.../payments.py`, `.../payments/__init__.py`,
+    `.../payments/validate.py` or `.../payments/validate/__init__.py` — a
+    trailing `__init__` names its package, so it is dropped before comparing.
+    Case-sensitive — near enough is a guess.
     """
     segments = ref.split(".")
     parts = os.path.splitext(str(path).replace("\\", "/"))[0].split("/")
@@ -205,7 +243,8 @@ def disambiguate(name: str, locations: list, text: str, overrides: dict):
     A dotted spelling of the name (`payments.validate`) is the author naming
     the prefix on purpose. It is matched against qualified names first and,
     when no qualified name matches (the scan backend records none), against
-    path suffixes. Reason codes:
+    path suffixes. `self.`, `cls.` and `this.` are syntax, not a prefix:
+    `self.validate` is treated exactly as a bare `validate`. Reason codes:
 
         dotted-name             the prefix names exactly one qualified name
         dotted-path             the prefix names exactly one path suffix
@@ -213,8 +252,9 @@ def disambiguate(name: str, locations: list, text: str, overrides: dict):
         dotted-unmatched        the prefix matches no location of the tail —
                                 contradictory evidence, so not even the bare
                                 tail is linked
-        dotted-and-path-disagree  the prefix and a path cited in the note
-                                point at different locations
+        dotted-and-path-disagree  a path cited in the note points at a
+                                location outside everything the prefix
+                                matches
     """
     if name in overrides:
         want = overrides[name]
@@ -250,7 +290,7 @@ def disambiguate(name: str, locations: list, text: str, overrides: dict):
         return None, "multiple-paths-in-note"
     if by_qualified and by_path and by_qualified[0] is not by_path[0]:
         return None, "qualified-name-and-path-disagree"
-    if len(by_dotted) == 1 and len(by_path) == 1 and by_dotted[0] is not by_path[0]:
+    if by_dotted and len(by_path) == 1 and all(l is not by_path[0] for l in by_dotted):
         return None, "dotted-and-path-disagree"
     if len(by_qualified) == 1:
         return by_qualified[0], "qualified-name"
