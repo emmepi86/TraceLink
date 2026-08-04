@@ -277,6 +277,134 @@ class AmbiguousSymbolsAreNeverGuessed(unittest.TestCase):
         self.assertEqual(link.fmt(norm["parse_payload"][0]), "src/parser.py:L4")
 
 
+class DottedReferencesNarrowWithoutGuessing(unittest.TestCase):
+    """0.5.x indexed symbols by simple name only, so a note writing
+    `payments.validate` either matched nothing (short tail in backticks) or
+    was treated as a bare `validate` — the prefix the author spelled out was
+    discarded exactly where it was the disambiguating evidence."""
+
+    QUALIFIED = [
+        {"path": "src/users.py", "line": 31, "kind": "py",
+         "qualified_name": "app.users.validate"},
+        {"path": "src/payments.py", "line": 74, "kind": "py",
+         "qualified_name": "app.payments.validate"},
+    ]
+    SCAN = [  # what the scan backend produces: no qualified names at all
+        {"path": "src/users.py", "line": 31, "kind": "py", "qualified_name": None},
+        {"path": "src/payments.py", "line": 74, "kind": "py", "qualified_name": None},
+    ]
+
+    def test_an_exactly_cited_qualified_name_still_resolves(self):
+        two = [
+            {"path": "src/users.py", "line": 31, "kind": "py",
+             "qualified_name": "users.validate"},
+            {"path": "src/payments.py", "line": 74, "kind": "py",
+             "qualified_name": "payments.validate"},
+        ]
+        loc, how = link.disambiguate(
+            "validate", two, "the bug is in `payments.validate`.", {})
+        self.assertEqual((loc["path"], how), ("src/payments.py", "qualified-name"))
+
+    def test_a_dotted_suffix_of_a_deeper_qualified_name_resolves(self):
+        """`payments.validate` is not the full qualified name
+        `app.payments.validate`, but it names exactly one of them."""
+        loc, how = link.disambiguate(
+            "validate", self.QUALIFIED, "see `payments.validate` for the bug.", {})
+        self.assertEqual((loc["path"], how), ("src/payments.py", "dotted-name"))
+
+    def test_a_dotted_prefix_resolves_by_path_suffix_when_scan_left_no_qualified_names(self):
+        for payments_path in ("src/payments.py", "src/payments/__init__.py",
+                              "src/payments/validate.py"):
+            with self.subTest(path=payments_path):
+                locs = [
+                    {"path": "src/users.py", "line": 31, "kind": "py",
+                     "qualified_name": None},
+                    {"path": payments_path, "line": 74, "kind": "py",
+                     "qualified_name": None},
+                ]
+                loc, how = link.disambiguate(
+                    "validate", locs, "`payments.validate` is wrong.", {})
+                self.assertEqual((loc["path"], how), (payments_path, "dotted-path"))
+
+    def test_a_dotted_prefix_matching_two_locations_stays_ambiguous(self):
+        locs = [
+            {"path": "a/payments.py", "line": 1, "kind": "py", "qualified_name": None},
+            {"path": "b/payments.py", "line": 2, "kind": "py", "qualified_name": None},
+        ]
+        loc, how = link.disambiguate(
+            "validate", locs, "`payments.validate` is wrong.", {})
+        self.assertIsNone(loc)
+        self.assertEqual(how, "dotted-ambiguous")
+
+    def test_a_dotted_reference_matching_nothing_does_not_link_the_bare_tail(self):
+        """The note says `payments.validate`; the only known `validate` lives
+        in users.py. Contradictory evidence is not no evidence — linking the
+        tail as if the prefix had not been written would be guessing."""
+        loc, how = link.disambiguate(
+            "validate", self.SCAN[:1], "`payments.validate` is wrong.", {})
+        self.assertIsNone(loc)
+        self.assertEqual(how, "dotted-unmatched")
+
+    def test_path_suffix_matching_is_case_sensitive(self):
+        locs = [{"path": "src/Payments.py", "line": 74, "kind": "py",
+                 "qualified_name": None}]
+        loc, how = link.disambiguate(
+            "validate", locs, "`payments.validate` is wrong.", {})
+        self.assertIsNone(loc)
+        self.assertEqual(how, "dotted-unmatched")
+
+    def test_a_dotted_prefix_and_a_cited_path_that_disagree_stay_ambiguous(self):
+        loc, how = link.disambiguate(
+            "validate", self.SCAN,
+            "`payments.validate` is described in src/users.py.", {})
+        self.assertIsNone(loc)
+        self.assertEqual(how, "dotted-and-path-disagree")
+
+    def test_a_backticked_dotted_reference_bypasses_min_len(self):
+        """A dotted name in backticks is a decision, like any code span; the
+        tail being shorter than --min-len must not erase it."""
+        syms = {"save": [{"path": "src/db.py", "line": 5, "kind": "py",
+                          "qualified_name": None}]}
+        found = link.candidates("the retry loses `db.save`.", syms, 7, set())
+        self.assertEqual(found, [("save", "inline-code")])
+
+    def test_a_bare_dotted_reference_still_respects_min_len(self):
+        syms = {"save": [{"path": "src/db.py", "line": 5, "kind": "py",
+                          "qualified_name": None}]}
+        self.assertEqual(link.candidates("the retry loses db.save.", syms, 7, set()), [])
+
+    def test_a_backticked_dotted_reference_outranks_a_bare_mention(self):
+        syms = {"validate": self.SCAN}
+        found = link.candidates("`payments.validate` is wrong.", syms, 7, set())
+        self.assertEqual(found, [("validate", "inline-code")])
+
+    def test_a_bare_name_without_a_dotted_prefix_behaves_as_before(self):
+        loc, how = link.disambiguate(
+            "validate", self.SCAN, "the `validate` helper is wrong.", {})
+        self.assertIsNone(loc)
+        self.assertEqual(how, "ambiguous")
+
+    def test_explain_shows_the_dotted_reason_end_to_end(self):
+        import json as j
+        import subprocess
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with tempfile.TemporaryDirectory() as tmp:
+            note = os.path.join(tmp, "RES-01.md")
+            open(note, "w").write(
+                "---\ntracelink_schema: 1\nid: RES-01\n---\n\n# RES-01\n\n"
+                "`payments.validate` accepts an empty amount.\n")
+            syms = os.path.join(tmp, "s.json")
+            j.dump({"backend": "test", "symbols": {"validate": self.SCAN}},
+                   open(syms, "w"))
+            r = subprocess.run(
+                [sys.executable, f"{root}/scripts/link.py", "--vault", tmp,
+                 "--symbols", syms, "--explain"],
+                capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("dotted-path", r.stdout)
+            self.assertIn("src/payments.py:L74", open(note).read())
+
+
 class TheSymbolIndexCarriesProvenance(unittest.TestCase):
     def test_schema_and_backend_are_recorded(self):
         import json

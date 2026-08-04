@@ -43,6 +43,9 @@ _DEFAULT_STOP = {
 _SNAKE = re.compile(r"\b(_?[a-z][a-z0-9_]*)\b")
 _CAMEL = re.compile(r"\b([A-Z][A-Za-z0-9]+)\b")
 _CODE_SPAN = re.compile(r"`([^`\n]{2,80})`")
+#: `payments.validate` — identifiers joined by dots, nothing else. A path in
+#: backticks must not be mistaken for a dotted name via its extension.
+_DOTTED = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+")
 
 _FORWARD_HEADING = "## Linked code"
 _BLOCK_START = "<!-- tracelink:linked-code:start -->"
@@ -109,12 +112,21 @@ def candidates(text: str, symbols: Dict[str, str], min_len: int,
     A name inside backticks is a decision; a bare word of the same spelling may
     be prose. Ranking before truncation matters — capping an alphabetically
     sorted list throws away the strongest evidence for the weakest.
+
+    A dotted span (`payments.validate`) resolves to its tail: the index is
+    keyed by simple name, but the author spelled the reference out, so it
+    counts as inline code and bypasses --min-len like any other code span.
+    The prefix is not discarded — disambiguate() reads it from the text.
     """
     ranked: Dict[str, str] = {}
     for span in _CODE_SPAN.findall(text):
         token = span.strip().rstrip("()").lstrip(".")
         if token in symbols:
             ranked[token] = "inline-code"
+        elif _DOTTED.fullmatch(token):
+            tail = token.rsplit(".", 1)[1]
+            if tail in symbols:
+                ranked[tail] = "inline-code"
     for m in _SNAKE.findall(text):
         if m in ranked or m in stop or len(m) < min_len:
             continue
@@ -153,6 +165,31 @@ def fmt(loc: dict) -> str:
     return f"{loc['path']}:L{loc['line']}" if loc.get("line") else str(loc["path"])
 
 
+def _dotted_refs(name: str, text: str) -> list:
+    """Dotted spellings of `name` the note contains: `payments.validate` is a
+    reference to the tail carrying its own disambiguating prefix."""
+    pat = re.compile(r"\b((?:[A-Za-z_][A-Za-z0-9_]*\.)+" + re.escape(name) + r")\b")
+    return sorted(set(pat.findall(text)))
+
+
+def _dotted_matches_qualified(loc: dict, ref: str) -> bool:
+    q = loc.get("qualified_name")
+    return bool(q) and (q == ref or q.endswith("." + ref))
+
+
+def _dotted_matches_path(path: str, ref: str) -> bool:
+    """The dotted segments against the final path segments, extension dropped:
+    `payments.validate` matches `.../payments.py`, `.../payments/__init__.py`
+    or `.../payments/validate.py`. Case-sensitive — near enough is a guess.
+    """
+    segments = ref.split(".")
+    parts = os.path.splitext(str(path).replace("\\", "/"))[0].split("/")
+    if parts and parts[-1] == "__init__":
+        parts = parts[:-1]
+    prefix = segments[:-1]
+    return parts[-len(prefix):] == prefix or parts[-len(segments):] == segments
+
+
 def disambiguate(name: str, locations: list, text: str, overrides: dict):
     """Pick a location only when the evidence points at exactly one.
 
@@ -164,6 +201,20 @@ def disambiguate(name: str, locations: list, text: str, overrides: dict):
     structured decision. A qualified name and a path are both authorial
     evidence of the same weight: when they disagree, that is a conflict to
     report, not a precedence to invent.
+
+    A dotted spelling of the name (`payments.validate`) is the author naming
+    the prefix on purpose. It is matched against qualified names first and,
+    when no qualified name matches (the scan backend records none), against
+    path suffixes. Reason codes:
+
+        dotted-name             the prefix names exactly one qualified name
+        dotted-path             the prefix names exactly one path suffix
+        dotted-ambiguous        the prefix still matches two or more locations
+        dotted-unmatched        the prefix matches no location of the tail —
+                                contradictory evidence, so not even the bare
+                                tail is linked
+        dotted-and-path-disagree  the prefix and a path cited in the note
+                                point at different locations
     """
     if name in overrides:
         want = overrides[name]
@@ -171,6 +222,20 @@ def disambiguate(name: str, locations: list, text: str, overrides: dict):
             if want in (loc.get("qualified_name"), loc["path"], fmt(loc)):
                 return loc, "frontmatter-override"
         return None, "override-unmatched"
+
+    refs = _dotted_refs(name, text)
+    by_dotted, dotted_how = [], None
+    if refs:
+        by_dotted = [l for l in locations
+                     if any(_dotted_matches_qualified(l, r) for r in refs)]
+        dotted_how = "dotted-name"
+        if not by_dotted:
+            by_dotted = [l for l in locations
+                         if any(_dotted_matches_path(l["path"], r) for r in refs)]
+            dotted_how = "dotted-path"
+        if not by_dotted:
+            return None, "dotted-unmatched"
+
     if len(locations) == 1:
         return locations[0], "unique"
 
@@ -185,10 +250,16 @@ def disambiguate(name: str, locations: list, text: str, overrides: dict):
         return None, "multiple-paths-in-note"
     if by_qualified and by_path and by_qualified[0] is not by_path[0]:
         return None, "qualified-name-and-path-disagree"
+    if len(by_dotted) == 1 and len(by_path) == 1 and by_dotted[0] is not by_path[0]:
+        return None, "dotted-and-path-disagree"
     if len(by_qualified) == 1:
         return by_qualified[0], "qualified-name"
     if len(by_path) == 1:
         return by_path[0], "path-in-note"
+    if refs:
+        if len(by_dotted) == 1:
+            return by_dotted[0], dotted_how
+        return None, "dotted-ambiguous"
     return None, "ambiguous"
 
 
