@@ -12,21 +12,39 @@ The matching is LEXICAL. It finds identifiers a note actually spells out. It
 will not know that "the enrichment channel" means `enrich_records()` unless the
 note says so.
 
+Incremental relinking: a sidecar `{vault}/.tracelink-link-state.json` records,
+per note, a hash of its authored text (plus its frontmatter overrides, which
+`matchable()` strips but which change the outcome) and the symbols its managed
+block lists. A later run skips a note only when it can PROVE the outcome would
+be identical: same authored text, same options, and none of the symbols the
+note links or mentions has been added, removed, or moved. Anything the proof
+does not cover — a corrupt or missing state, a different schema, different
+options, an ambiguous reference, a managed block that does not match — falls
+back to a full relink, because a stale link is a wrong answer delivered
+quickly. `--check` ignores the state entirely (it verifies, so it must look)
+and never writes it; `--full` ignores it and rebuilds it.
+
+The JSON report carries the additive key `linking.notes_skipped_unchanged`;
+the text report prints the same figure. `notes_scanned` remains the total
+number of notes in the vault.
+
 Usage:
     python3 link.py --vault vault/ --symbols symbols.json
     python3 link.py --vault vault/ --symbols symbols.json --check
     python3 link.py --vault vault/ --symbols symbols.json --explain
+    python3 link.py --vault vault/ --symbols symbols.json --full
 """
 
 from __future__ import annotations
 
 import argparse
 import collections
+import hashlib
 import json
 import os
 import re
 import sys
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 #: Names too common to be evidence of anything. A note mentioning "data" should
 #: not acquire a link to every table called `data`. Extend with --stopwords.
@@ -350,6 +368,104 @@ def write_atomic(path: str, content: str) -> None:
     os.replace(tmp, path)
 
 
+# --------------------------------------------------------------------------- #
+# incremental state — proof, not memory
+# --------------------------------------------------------------------------- #
+#
+# The state is only ever an optimisation: every fact it asserts must be
+# re-checkable from the inputs of the current run, and anything it cannot
+# prove is relinked in full. Naming follows `.tracelink-manifest.json`.
+
+_STATE_FILE = ".tracelink-link-state.json"
+_STATE_SCHEMA = 1
+
+
+def _sha(data) -> str:
+    if isinstance(data, str):
+        data = data.encode("utf-8", "replace")
+    return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+def note_fingerprint(body: str, overrides: dict) -> str:
+    """Hash of everything about a note that can change its links.
+
+    The overrides are included on purpose: they live in the frontmatter,
+    which `matchable()` strips — a hash of the body alone would let an
+    author repoint a `tracelink:` override and see nothing happen, which is
+    precisely the stale link this state must never produce.
+    """
+    return _sha(body + "\0" + json.dumps(overrides, sort_keys=True))
+
+
+def options_fingerprint(min_len: int, max_links: int, stop: set) -> str:
+    return _sha(json.dumps([min_len, max_links, sorted(stop)]))
+
+
+def location_fingerprint(locations: list) -> str:
+    """Covers path, line, kind and qualified name — a definition that moves
+    one line changes this hash, and the notes that link it get relinked so
+    their `path:Lline` stays true."""
+    return _sha(json.dumps(locations, sort_keys=True, default=str))
+
+
+def load_state(path: str) -> Optional[dict]:
+    """The state on disk, or None for anything less than fully well-formed.
+
+    Absent, unreadable, invalid JSON, wrong schema, wrong shape anywhere —
+    all collapse to the same answer, because a partially trusted state is a
+    partially wrong vault. None means: relink everything.
+    """
+    try:
+        with open(path) as fh:
+            raw = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(raw, dict) or raw.get("schema_version") != _STATE_SCHEMA:
+        return None
+    if not isinstance(raw.get("symbols_fingerprint"), str):
+        return None
+    if not isinstance(raw.get("options_fingerprint"), str):
+        return None
+    locs = raw.get("symbol_locations")
+    if not isinstance(locs, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in locs.items()):
+        return None
+    notes = raw.get("notes")
+    if not isinstance(notes, dict):
+        return None
+    for name, entry in notes.items():
+        if not isinstance(name, str) or not isinstance(entry, dict):
+            return None
+        if not isinstance(entry.get("content_hash"), str):
+            return None
+        linked = entry.get("linked")
+        if not isinstance(linked, list) or not all(
+                isinstance(s, str) for s in linked):
+            return None
+    return raw
+
+
+def replay_links(names: list, symbols: dict, body: str, overrides: dict):
+    """Re-derive the links a skipped note carries, or None to force a relink.
+
+    The skip decision guarantees the inputs are the ones the links were made
+    from: same body, same overrides, and unchanged locations for every symbol
+    the note touches. Disambiguation is deterministic over those inputs, so
+    replaying it must reproduce the previous result — and if it cannot (a name
+    gone from the index, an ambiguity that was not there), the proof has
+    failed and the caller relinks in full rather than guessing.
+    """
+    links = []
+    for name in names:
+        locations = symbols.get(name)
+        if not locations:
+            return None
+        loc, how = disambiguate(name, locations, body, overrides)
+        if loc is None:
+            return None
+        links.append((name, loc, f"cached/{how}"))
+    return links
+
 
 # --------------------------------------------------------------------------- #
 # freshness — is this index still about the repository in front of us?
@@ -486,6 +602,8 @@ def main() -> int:
     ap.add_argument("--stopwords", default="", help="comma-separated extra names to ignore")
     ap.add_argument("--check", action="store_true",
                     help="report what would change, write nothing; exit 1 if stale")
+    ap.add_argument("--full", action="store_true",
+                    help="ignore the incremental state and reprocess every note")
     ap.add_argument("--explain", action="store_true",
                     help="print why each link was made")
     ap.add_argument("--repo", default=".",
@@ -499,8 +617,9 @@ def main() -> int:
     ap.add_argument("--format", choices=["text", "json"], default="text")
     args = ap.parse_args()
 
-    with open(args.symbols) as fh:
-        payload = json.load(fh)
+    with open(args.symbols, "rb") as fh:
+        raw_symbols = fh.read()
+    payload = json.loads(raw_symbols)
     mode = "require" if args.require_fresh_index else args.freshness
     fresh = None
     if mode != "ignore":
@@ -535,6 +654,36 @@ def main() -> int:
     symbols = normalise(payload.get("symbols") or payload)
     stop = set(_DEFAULT_STOP) | {s.strip() for s in args.stopwords.split(",") if s.strip()}
 
+    # Incremental state. `--check` verifies, so it must look at everything:
+    # the state is neither read nor written. `--full` distrusts it on request.
+    # A state whose options differ described a different linker and is
+    # discarded whole — half-trusting it would mix two rule sets in one vault.
+    symbols_fp = _sha(raw_symbols)
+    opts_fp = options_fingerprint(args.min_len, args.max_links, stop)
+    current_locations = {n: location_fingerprint(l) for n, l in symbols.items()}
+    state_path = os.path.join(args.vault, _STATE_FILE)
+    state = None
+    if not args.check and not args.full:
+        state = load_state(state_path)
+        if state and state["options_fingerprint"] != opts_fp:
+            state = None
+    symbols_changed = bool(state) and state["symbols_fingerprint"] != symbols_fp
+    changed_names: set = set()
+    mention_pat = None
+    if state and symbols_changed:
+        old_locations = state["symbol_locations"]
+        # Added, removed, and moved names all count as changed: a removed name
+        # can turn an ambiguity or an unlinked reason into something else, so
+        # notes that merely MENTION it are relinked too — more conservative
+        # than strictly necessary, and stale-proof.
+        changed_names = ({n for n in old_locations
+                          if current_locations.get(n) != old_locations[n]} |
+                         {n for n in current_locations if n not in old_locations})
+        if changed_names:
+            mention_pat = re.compile(
+                r"\b(?:" + "|".join(map(re.escape, sorted(changed_names))) + r")\b")
+    state_notes = state.get("notes", {}) if state else {}
+
     # RES-OWNERSHIP: only notes tracelink generated. Pointing --vault at a
     # directory of hand-written markdown must never rewrite it.
     notes, skipped = [], 0
@@ -564,7 +713,12 @@ def main() -> int:
     # Why a note linked nothing. "No link" has several causes and they call for
     # different actions: rewrite the finding, widen the index, or disambiguate.
     unlinked: List[Dict[str, str]] = []
+    # Rebuilt from scratch every run: entries for deleted notes fall away, and
+    # only notes whose analysis was clean (no ambiguity) are recorded — an
+    # ambiguous note is a warning, and warnings are re-earned, not cached.
+    new_state_notes: Dict[str, dict] = {}
     scanned = with_matches = modified = total_links = ambiguous = 0
+    skipped_unchanged = 0
 
     for name in notes:
         path = os.path.join(args.vault, name)
@@ -572,15 +726,40 @@ def main() -> int:
         scanned += 1
         body = matchable(text)
         overrides = read_overrides(text)
-        links, note_ambiguous = [], []
-        for sym, why in candidates(body, symbols, args.min_len, stop):
-            loc, how = disambiguate(sym, symbols[sym], body, overrides)
-            if loc is None:
-                note_ambiguous.append((sym, how))
-                continue
-            links.append((sym, loc, f"{why}/{how}"))
-        links = links[: args.max_links]
+        note_hash = note_fingerprint(body, overrides)
+
+        # The skip decision. Default is to relink; every clause below is a
+        # positive proof that relinking would reproduce the file byte for
+        # byte. When the proof fails at any step, we fall through to the
+        # full pipeline rather than reason about why.
+        cached = None
+        entry = state_notes.get(name)
+        if entry is not None and entry["content_hash"] == note_hash:
+            affected = symbols_changed and (
+                bool(changed_names.intersection(entry["linked"]))
+                or (mention_pat is not None and mention_pat.search(body)))
+            if not affected:
+                cached = replay_links(entry["linked"], symbols, body, overrides)
+                if cached is not None and apply_block(text, cached, symbols) != text:
+                    cached = None  # the block on disk is not what was promised
+
+        note_ambiguous = []
+        if cached is not None:
+            skipped_unchanged += 1
+            links = cached
+        else:
+            links = []
+            for sym, why in candidates(body, symbols, args.min_len, stop):
+                loc, how = disambiguate(sym, symbols[sym], body, overrides)
+                if loc is None:
+                    note_ambiguous.append((sym, how))
+                    continue
+                links.append((sym, loc, f"{why}/{how}"))
+            links = links[: args.max_links]
         ambiguous += len(note_ambiguous)
+        if not note_ambiguous:
+            new_state_notes[name] = {"content_hash": note_hash,
+                                     "linked": [s for s, _l, _w in links]}
         if not links:
             # Distinguish the causes rather than reporting a single count.
             known = [w for w in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", body)
@@ -600,11 +779,12 @@ def main() -> int:
         if links:
             with_matches += 1
             total_links += len(links)
-        new = apply_block(text, links, symbols)
-        if new != text:
-            modified += 1
-            if not args.check:
-                write_atomic(path, new)
+        if cached is None:  # a skipped note was proven identical already
+            new = apply_block(text, links, symbols)
+            if new != text:
+                modified += 1
+                if not args.check:
+                    write_atomic(path, new)
         stem = os.path.splitext(name)[0]
         for sym, loc, why in links:
             backward[sym].append((stem, fmt(loc)))
@@ -696,13 +876,27 @@ def main() -> int:
     if index_stale and not args.check:
         write_atomic(index_path, index_text)
 
+    # Written on every non-check run that got this far — even one that
+    # relinked nothing, because the fingerprints must describe the inputs the
+    # vault was last verified against, not the last time something changed.
+    if not args.check:
+        write_atomic(state_path, json.dumps({
+            "schema_version": _STATE_SCHEMA,
+            "symbols_fingerprint": symbols_fp,
+            "options_fingerprint": opts_fp,
+            "symbol_locations": current_locations,
+            "notes": new_state_notes,
+        }, indent=1) + "\n")
+
     if args.format == "json":
         print(json.dumps({
             "ok": not (args.check and (modified or index_stale)),
             "exit_reason": None,
             "freshness": fresh.as_dict() if fresh else None,
             "linking": {"notes_scanned": scanned, "notes_with_matches": with_matches,
-                        "notes_modified": modified, "symbols_linked": total_links,
+                        "notes_modified": modified,
+                        "notes_skipped_unchanged": skipped_unchanged,
+                        "symbols_linked": total_links,
                         "distinct_symbols": len(backward), "ambiguous_matches": ambiguous},
             "unlinked_notes": unlinked,
         }, indent=1))
@@ -712,6 +906,7 @@ def main() -> int:
     print(f"notes_scanned:      {scanned}")
     print(f"notes_with_matches: {with_matches}")
     print(f"notes_modified:     {modified}")
+    print(f"notes_skipped_unchanged: {skipped_unchanged}")
     print(f"symbols_linked:     {total_links}")
     print(f"distinct_symbols:   {len(backward)}")
     print(f"ambiguous_matches:  {ambiguous}")
