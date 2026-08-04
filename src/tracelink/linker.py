@@ -552,6 +552,10 @@ def main() -> int:
         return 1
 
     backward: Dict[str, List[str]] = collections.defaultdict(list)
+    # (note, symbol) pairs per file, from links actually written. The rollup
+    # answers "which file do the notes keep pointing at" — counting ambiguous
+    # candidates here would count links the linker refused to make.
+    file_rollup: Dict[str, set] = collections.defaultdict(set)
     # Symbols a note referenced but could not be linked to one place. Kept per
     # symbol so the inverse index can say "referenced, ambiguous" instead of
     # dropping the reference entirely — a note asking about `row_fingerprint`
@@ -604,6 +608,7 @@ def main() -> int:
         stem = os.path.splitext(name)[0]
         for sym, loc, why in links:
             backward[sym].append((stem, fmt(loc)))
+            file_rollup[loc["path"]].add((stem, sym))
             if args.explain:
                 print(f"{stem} -> {sym}\n    reason: {why}\n    destination: {fmt(loc)}")
 
@@ -628,6 +633,43 @@ def main() -> int:
         refs = " ".join(f"[[{n}]]" for n in sorted({n for n, _ in backward[sym]}))
         loc = sorted({l for _, l in backward[sym]})[0].replace("|", r"\|")
         lines.append(f"| `{sym}` | {loc} | {refs} |")
+
+    # Three notes about one function is a signal worth seeing — and it should
+    # not require counting wikilinks in the table above by hand. Rendered only
+    # when there is something to show: a permanent header over an empty table
+    # trains the reader to skip the section on the day it matters.
+    hot_syms = [s for s in backward if len({n for n, _ in backward[s]}) >= 2]
+    hot_files = [p for p in file_rollup if len(file_rollup[p]) >= 2]
+    if hot_syms or hot_files:
+        lines += [
+            "",
+            "## Hotspots",
+            "",
+            "Where the notes converge — several findings naming the same code",
+            "is a signal worth seeing on its own.",
+            "",
+        ]
+        if hot_syms:
+            lines += ["| symbol | location | notes | note count |",
+                      "|---|---|---|---|"]
+            for sym in sorted(hot_syms,
+                              key=lambda s: (-len({n for n, _ in backward[s]}), s)):
+                stems = sorted({n for n, _ in backward[sym]})
+                refs = " ".join(f"[[{n}]]" for n in stems)
+                loc = sorted({l for _, l in backward[sym]})[0].replace("|", r"\|")
+                lines.append(f"| `{sym}` | {loc} | {refs} | {len(stems)} |")
+        if hot_files:
+            if hot_syms:
+                lines.append("")
+            lines += ["### Per file",
+                      "",
+                      "| file | distinct symbols | note links |",
+                      "|---|---|---|"]
+            for path in sorted(hot_files,
+                               key=lambda p: (-len(file_rollup[p]), p)):
+                distinct = len({s for _, s in file_rollup[path]})
+                esc = path.replace("|", r"\|")
+                lines.append(f"| {esc} | {distinct} | {len(file_rollup[path])} |")
 
     if ambiguous_refs:
         lines += [

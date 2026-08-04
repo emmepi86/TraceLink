@@ -874,6 +874,111 @@ class FreshnessTracksTheIndexScopeNotTheRepository(unittest.TestCase):
         self.assertEqual(payload["tracelink_version"], "0.4.2")
 
 
+class HotspotsSurfaceWhereNotesConverge(unittest.TestCase):
+    """Three notes about one function is a signal worth seeing — until 0.6.0
+    the reader had to count wikilinks in the main table by hand. The section
+    must count the links actually written, and a vault without convergence
+    must produce the same CODE-INDEX as before: an empty table under a
+    permanent header would train the reader to skip it."""
+
+    @staticmethod
+    def _code_index(notes, symbols):
+        import json as j
+        import subprocess
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with tempfile.TemporaryDirectory() as tmp:
+            for stem, prose in notes.items():
+                open(os.path.join(tmp, f"{stem}.md"), "w").write(
+                    f"---\ntracelink_schema: 1\nid: {stem}\n---\n\n"
+                    f"# {stem}\n\n{prose}\n")
+            syms = os.path.join(tmp, "s.json")
+            j.dump({"backend": "test", "symbols": symbols}, open(syms, "w"))
+            r = subprocess.run(
+                [sys.executable, f"{root}/scripts/link.py",
+                 "--vault", tmp, "--symbols", syms],
+                capture_output=True, text=True)
+            assert r.returncode == 0, r.stdout + r.stderr
+            return open(os.path.join(tmp, "CODE-INDEX.md")).read()
+
+    def test_two_notes_on_one_symbol_make_a_hotspot(self):
+        text = self._code_index(
+            {"RES-01": "`parse_payload` returns {} for an empty body.",
+             "RES-02": "`parse_payload` drops the charset silently."},
+            {"parse_payload": "src/parser.py:L4"})
+        self.assertIn("## Hotspots", text)
+        self.assertIn(
+            "| `parse_payload` | src/parser.py:L4 | [[RES-01]] [[RES-02]] | 2 |",
+            text)
+
+    def test_no_convergence_means_no_section_at_all(self):
+        text = self._code_index(
+            {"RES-01": "`parse_payload` returns {} for an empty body.",
+             "RES-02": "`ingest_batch` retries forever."},
+            {"parse_payload": "src/parser.py:L4",
+             "ingest_batch": "src/ingest.py:L9"})
+        self.assertNotIn("Hotspots", text)
+        self.assertNotIn("Per file", text)
+
+    def test_two_symbols_in_one_file_roll_up_without_a_symbol_table(self):
+        """One note each: no symbol is a hotspot, but the file is — and the
+        empty symbol table must not be printed above it."""
+        text = self._code_index(
+            {"RES-01": "`parse_payload` returns {} for an empty body.",
+             "RES-02": "`parse_header` ignores the charset."},
+            {"parse_payload": "src/parser.py:L4",
+             "parse_header": "src/parser.py:L20"})
+        self.assertIn("## Hotspots", text)
+        self.assertIn("### Per file", text)
+        self.assertIn("| src/parser.py | 2 | 2 |", text)
+        self.assertNotIn("| symbol | location | notes | note count |", text)
+
+    def test_ordering_is_count_desc_then_name_asc(self):
+        text = self._code_index(
+            {"RES-01": "`zeta_helper` and `alpha_helper` and `beta_helper`.",
+             "RES-02": "`zeta_helper` and `alpha_helper` and `beta_helper`.",
+             "RES-03": "`zeta_helper` alone."},
+            {"zeta_helper": "src/z.py:L1",
+             "alpha_helper": "src/a.py:L1",
+             "beta_helper": "src/b.py:L1"})
+        hot = text.split("## Hotspots")[1]
+        symtable = hot.split("### Per file")[0]
+        self.assertLess(symtable.index("zeta_helper"), symtable.index("alpha_helper"))
+        self.assertLess(symtable.index("alpha_helper"), symtable.index("beta_helper"))
+        pertable = hot.split("### Per file")[1]
+        self.assertLess(pertable.index("src/z.py"), pertable.index("src/a.py"))
+        self.assertLess(pertable.index("src/a.py"), pertable.index("src/b.py"))
+        self.assertIn("| `zeta_helper` | src/z.py:L1 | [[RES-01]] [[RES-02]] [[RES-03]] | 3 |", text)
+        self.assertIn("| src/z.py | 1 | 3 |", text)
+
+    def test_hotspots_come_before_ambiguous_references(self):
+        text = self._code_index(
+            {"RES-01": "`parse_payload` breaks; `validate` too.",
+             "RES-02": "`parse_payload` breaks; `validate` too."},
+            {"parse_payload": "src/parser.py:L4",
+             "validate": [
+                 {"path": "src/users.py", "line": 3, "kind": "py",
+                  "qualified_name": None},
+                 {"path": "src/payments.py", "line": 7, "kind": "py",
+                  "qualified_name": None}]})
+        self.assertIn("## Hotspots", text)
+        self.assertIn("## Ambiguous references", text)
+        self.assertLess(text.index("## Hotspots"),
+                        text.index("## Ambiguous references"))
+
+    def test_ambiguous_candidates_do_not_count_as_hotspots(self):
+        """Both notes name `validate`; neither link is written. A hotspot row
+        for it would count references the linker refused to make."""
+        text = self._code_index(
+            {"RES-01": "`validate` is wrong.",
+             "RES-02": "`validate` is wrong here too."},
+            {"validate": [
+                {"path": "src/users.py", "line": 3, "kind": "py",
+                 "qualified_name": None},
+                {"path": "src/payments.py", "line": 7, "kind": "py",
+                 "qualified_name": None}]})
+        self.assertNotIn("Hotspots", text)
+
+
 class TruncationIsNeverSilent(unittest.TestCase):
     def test_the_scan_limit_is_reported(self):
         from tracelink import symbol_index as symbols
