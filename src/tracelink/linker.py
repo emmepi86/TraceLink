@@ -529,10 +529,13 @@ STATE_FILE = ".tracelink-link-state.json"
 _STATE_FILE = STATE_FILE  # private alias kept for internal compatibility
 #: v2 caches each link's resolved location alongside its name, so the skip
 #: path renders the managed block from the state instead of disambiguating
-#: again. v3 adds, per note, the `files` array of resolved file anchors and
-#: a `files_fingerprint` over the full resolution of the note's file
-#: references. A v1 or v2 state — or any other version — is discarded whole:
-#: the schema-mismatch path IS the migration, one full relink.
+#: again. v3 adds, per note, the `files` array of resolved file anchors, a
+#: `files_fingerprint` over the full resolution of the note's file
+#: references, and the `ambiguous` symbol references — cached so that a
+#: skipped note keeps re-earning its warnings, and sound because the skip
+#: proof covers exactly the inputs disambiguation reads. A v1 or v2 state —
+#: or any other version — is discarded whole: the schema-mismatch path IS
+#: the migration, one full relink.
 _STATE_SCHEMA = 3
 
 
@@ -634,6 +637,11 @@ def load_state(path: str) -> Optional[dict]:
                 isinstance(p, str) for p in files):
             return None
         if not isinstance(entry.get("files_fingerprint"), str):
+            return None
+        amb = entry.get("ambiguous")
+        if not isinstance(amb, list) or not all(
+                isinstance(a, (list, tuple)) and len(a) == 2
+                and all(isinstance(x, str) for x in a) for a in amb):
             return None
     return raw
 
@@ -917,9 +925,15 @@ def main() -> int:
     # Why a note linked nothing. "No link" has several causes and they call for
     # different actions: rewrite the finding, widen the index, or disambiguate.
     unlinked: List[Dict[str, str]] = []
-    # Rebuilt from scratch every run: entries for deleted notes fall away, and
-    # only notes whose analysis was clean (no ambiguity) are recorded — an
-    # ambiguous note is a warning, and warnings are re-earned, not cached.
+    # Rebuilt from scratch every run: entries for deleted notes fall away.
+    # EVERY scanned note is recorded — ambiguity no longer implies absence.
+    # 0.8.0 learned this on the real repo: an incidental symbol ambiguity
+    # (`up` on a migrations tree) used to discard the whole entry, including
+    # the note's clean file anchors, which left consult blind on exactly the
+    # infra notes file anchoring exists for. The symbol ambiguities are
+    # cached in the entry so a skipped note keeps re-earning its warnings;
+    # file ambiguities are re-derived from the outcomes, which every run
+    # recomputes anyway.
     new_state_notes: Dict[str, dict] = {}
     scanned = with_matches = modified = total_links = ambiguous = 0
     files_linked = skipped_unchanged = 0
@@ -940,6 +954,17 @@ def main() -> int:
         outcomes = [(ref, resolve_file_ref(ref, files_by_name))
                     for ref, _why in refs]
         files_fp = files_fingerprint(outcomes)
+        # Anchors and file ambiguities, derived from the outcomes for every
+        # note — cached ones included, so a skipped note re-earns its file
+        # warnings from today's tree rather than replaying yesterday's.
+        resolved_files: List[str] = []
+        note_file_ambiguous = []
+        for ref, matches in outcomes:
+            if len(matches) == 1:
+                if matches[0] not in resolved_files:
+                    resolved_files.append(matches[0])
+            elif len(matches) > 1:
+                note_file_ambiguous.append((ref, matches))
 
         # The skip decision. Default is to relink; every clause below is a
         # positive proof that relinking would reproduce the file byte for
@@ -956,13 +981,19 @@ def main() -> int:
                 if apply_block(text, cached, symbols, entry["files"]) != text:
                     cached = None  # the block on disk is not what was promised
 
-        note_ambiguous = []
-        note_file_ambiguous = []
         if cached is not None:
             skipped_unchanged += 1
             links = cached
             note_files = list(entry["files"])
+            # Symbol ambiguities from the cache — sound, because the skip
+            # proof covers them: same authored body (the content hash) and
+            # same locations for every symbol the note mentions (an
+            # ambiguous name IS mentioned, so a change to its locations
+            # trips `mention_pat` and forces the relink above). Under that
+            # proof, re-running disambiguation would reproduce this list.
+            note_ambiguous = [(sym, how) for sym, how in entry["ambiguous"]]
         else:
+            note_ambiguous = []
             links = []
             for sym, why in candidates(body, symbols, args.min_len, stop):
                 loc, how = disambiguate(sym, symbols[sym], body, overrides)
@@ -971,25 +1002,18 @@ def main() -> int:
                     continue
                 links.append((sym, loc, f"{why}/{how}"))
             links = links[: args.max_links]
-            note_files = []
-            for ref, matches in outcomes:
-                if len(matches) == 1:
-                    if matches[0] not in note_files:
-                        note_files.append(matches[0])
-                elif len(matches) > 1:
-                    note_file_ambiguous.append((ref, matches))
             # --max-links caps the TOTAL, symbols first — the block's own
             # order is the budget's order.
-            note_files = note_files[: max(0, args.max_links - len(links))]
+            note_files = resolved_files[: max(0, args.max_links - len(links))]
         ambiguous += len(note_ambiguous) + len(note_file_ambiguous)
-        if not note_ambiguous and not note_file_ambiguous:
-            new_state_notes[name] = {
-                "content_hash": note_hash,
-                "linked": [s for s, _l, _w in links],
-                "locations": [{"path": l["path"], "line": l.get("line")}
-                              for _s, l, _w in links],
-                "files": list(note_files),
-                "files_fingerprint": files_fp}
+        new_state_notes[name] = {
+            "content_hash": note_hash,
+            "linked": [s for s, _l, _w in links],
+            "locations": [{"path": l["path"], "line": l.get("line")}
+                          for _s, l, _w in links],
+            "files": list(note_files),
+            "files_fingerprint": files_fp,
+            "ambiguous": [[sym, how] for sym, how in note_ambiguous]}
         if not links and not note_files:
             # Distinguish the causes rather than reporting a single count.
             known = [w for w in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", body)

@@ -345,11 +345,12 @@ class SkippingActuallySkipsTheWork(_VaultCase):
 
 
 class SkippingNeverHidesAWarning(_VaultCase):
-    def test_an_ambiguous_note_is_reanalysed_every_run(self):
+    def test_an_ambiguous_note_keeps_warning_every_run(self):
         """A note the linker refused to link is a warning, and warnings must
-        survive the second run: the ambiguous section of CODE-INDEX and the
-        AMBIGUOUS lines are rebuilt from analysis, so the note is never
-        marked skippable."""
+        survive the second run. Since 0.8.0 the ambiguity is cached in the
+        note's state entry (ambiguity no longer implies absence), so the
+        note may be skipped — but the AMBIGUOUS lines and the ambiguous
+        section of CODE-INDEX must come out identical either way."""
         self.note("RES-01", "`validate` is wrong.")
         self.symbols({"validate": [
             {"path": "src/users.py", "line": 3, "kind": "py", "qualified_name": None},

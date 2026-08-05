@@ -271,6 +271,123 @@ class TheStateCarriesFileAnchors(_AnchorCase):
         self.assertIn("files", healed["notes"]["RES-01.md"])
 
 
+class AmbiguityNoLongerImpliesAbsence(_AnchorCase):
+    """0.8.0 fix round 1, Bug A: EVERY scanned note gets a state entry. An
+    incidental symbol ambiguity (`up` on a migrations tree) used to discard
+    the whole entry — including the note's clean file anchors — leaving
+    consult blind on exactly the infra notes the feature exists for."""
+
+    TWO_VALIDATE = {"validate": [
+        {"path": "src/users.py", "line": 3, "kind": "py",
+         "qualified_name": None},
+        {"path": "src/payments.py", "line": 7, "kind": "py",
+         "qualified_name": None}]}
+
+    def test_an_ambiguous_symbol_does_not_evict_the_files_from_the_state(self):
+        self.repo_file("infra/docker/compose.yml")
+        self.symbols(self.TWO_VALIDATE)
+        self.note("RES-01", "`validate` breaks when "
+                            "`infra/docker/compose.yml` changes ports.")
+        r = self.link()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("AMBIGUOUS validate", r.stdout)
+        entry = json.loads(self.read(STATE))["notes"]["RES-01.md"]
+        self.assertEqual(entry["files"], ["infra/docker/compose.yml"])
+        self.assertEqual(entry["ambiguous"], [["validate", "ambiguous"]])
+        self.assertIn("- infra/docker/compose.yml", self.block("RES-01.md"))
+
+    def test_consult_sees_the_files_of_a_note_with_incidental_ambiguity(self):
+        """The end-to-end that Bug A broke on the real repo: TODI-9 cites
+        compose.yml AND the ubiquitous `up`; editing compose.yml must still
+        inject the note."""
+        self.repo_file("infra/docker/compose.yml")
+        self.symbols(self.TWO_VALIDATE)
+        self.note("RES-01", "`validate` breaks when "
+                            "`infra/docker/compose.yml` changes ports.")
+        self.link()
+        proj = self._tmp.name
+        tl = os.path.join(proj, ".tracelink")
+        os.makedirs(tl, exist_ok=True)
+        os.symlink(self.vault, os.path.join(tl, "vault"))
+        with open(os.path.join(tl, "config.json"), "w") as fh:
+            json.dump({"consult": True}, fh)
+        os.makedirs(os.path.join(proj, "infra", "docker"), exist_ok=True)
+        open(os.path.join(proj, "infra", "docker", "compose.yml"),
+             "w").close()
+        out = plugin_refresh.consult(proj, _payload(
+            os.path.join(proj, "infra", "docker", "compose.yml")))
+        self.assertTrue(out, "consult is still blind on the ambiguous note")
+        ctx = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("RES-01", ctx)
+        self.assertIn("file: infra/docker/compose.yml", ctx)
+
+    def test_a_pure_ambiguous_note_is_skipped_without_losing_its_warning(self):
+        self.symbols(self.TWO_VALIDATE)
+        self.note("RES-01", "`validate` is wrong.")
+        self.link()
+        index_before = self.read("CODE-INDEX.md")
+        r2 = self.link()
+        self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
+        self.assertEqual(_stat(r2, "notes_skipped_unchanged"), 1)
+        self.assertIn("AMBIGUOUS validate", r2.stdout,
+                      "the skip must not swallow the warning")
+        self.assertEqual(self.read("CODE-INDEX.md"), index_before)
+        self.assertIn("## Ambiguous references", self.read("CODE-INDEX.md"))
+        self.assertEqual(self.block("RES-01.md"), "")
+
+    def test_a_cached_ambiguity_is_recomputed_when_the_symbol_moves(self):
+        """The cached warning is only as good as its proof: resolve the
+        ambiguity in the index and the note must be relinked, not replayed."""
+        self.symbols(self.TWO_VALIDATE)
+        self.note("RES-01", "`validate` is wrong.")
+        self.link()
+        self.symbols({"validate": [
+            {"path": "src/users.py", "line": 3, "kind": "py",
+             "qualified_name": None}]})
+        r2 = self.link()
+        self.assertEqual(r2.returncode, 0, r2.stdout + r2.stderr)
+        self.assertNotIn("AMBIGUOUS", r2.stdout)
+        self.assertIn("`validate` — src/users.py:L3", self.block("RES-01.md"))
+        self.assertNotIn("## Ambiguous references", self.read("CODE-INDEX.md"))
+
+    def test_status_classifies_ambiguity_from_the_index_not_from_absence(self):
+        """(c): unverified means a real mismatch on disk; a recorded note
+        that CODE-INDEX declares ambiguous is ambiguous-by-design, verified,
+        and never an unlinked problem."""
+        self.repo_file("infra/docker/compose.yml")
+        register = os.path.join(self._tmp.name, "FINDINGS.md")
+        with open(register, "w") as fh:
+            fh.write("# Findings\n\n## RES-01 — infra drift [HIGH]\n"
+                     "### STATUS: OPEN\n"
+                     "`validate` breaks when `infra/docker/compose.yml` "
+                     "changes ports.\n")
+        subprocess.run(
+            [sys.executable, f"{ROOT}/scripts/split.py", "--register",
+             register, "--out", self.vault, "--prefix", "RES"],
+            capture_output=True, text=True)
+        self.symbols(self.TWO_VALIDATE)
+        self.link()
+        r = subprocess.run(
+            [sys.executable, "-c",
+             "import sys; sys.path.insert(0, sys.argv[4]); "
+             "from tracelink.status import main; "
+             "sys.argv = ['status', '--register', sys.argv[1], '--vault', "
+             "sys.argv[2], '--symbols', sys.argv[3], '--format', 'json']; "
+             "raise SystemExit(main())",
+             register, self.vault, self.syms,
+             os.path.join(ROOT, "src")],
+            capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        payload = json.loads(r.stdout)
+        self.assertEqual(payload["links"]["notes_ambiguous"], 1)
+        self.assertEqual(payload["links"]["notes_unverified"], 0)
+        self.assertEqual(payload["links"]["unlinked_count"], 0)
+        # The test symbols file has no provenance, so freshness is honestly
+        # unknown — but nothing about LINKS may be a problem.
+        self.assertFalse([p for p in payload["problems"] if "link" in p],
+                         payload["problems"])
+
+
 class TheRepoTreeIsAnInputTheHashCannotSee(_AnchorCase):
     """Incremental correctness: a file appearing or disappearing changes the
     resolution of an untouched note, so the note must be relinked — the

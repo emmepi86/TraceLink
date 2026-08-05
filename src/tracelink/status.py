@@ -254,17 +254,21 @@ def _links(vault: str, symbols_path: str, notes: dict, vault_found: bool):
     # A note the state can vouch for is one it recorded with the content
     # hash the note still has. Anything else — edited since, deleted since —
     # is unverified, and the unlinked count over an unverified vault is not
-    # a count. One documented exception: a note the state never recorded
-    # BECAUSE its analysis was ambiguous. The linker publishes that refusal
-    # in CODE-INDEX.md, so counting the note unverified forever (ok:no with
-    # nothing to fix) was noise, not caution — it is ambiguous by design.
+    # a count. Ambiguity is classified from CODE-INDEX.md's "## Ambiguous
+    # references" section, which every link run rebuilds — since 0.8.0 an
+    # ambiguous note DOES have a state entry (ambiguity no longer implies
+    # absence), so the two facts are orthogonal: `unverified` means a real
+    # mismatch on disk, `ambiguous` means the linker's recorded refusal to
+    # guess. A pre-0.8 state may still lack the entry; the ambiguous note is
+    # then classified from the index alone, not counted unverified.
     ambiguous_ids = _ambiguous_ids(vault)
     unverified = ambiguous = 0
     for name, text in notes.items():
         entry = state["notes"].get(name)
-        if entry is None and os.path.splitext(name)[0] in ambiguous_ids:
+        if os.path.splitext(name)[0] in ambiguous_ids:
             ambiguous += 1
-            continue
+            if entry is None:
+                continue  # pre-0.8 state: ambiguous by design, not stale
         h = linker.note_fingerprint(linker.matchable(text),
                                     linker.read_overrides(text))
         if entry is None or entry["content_hash"] != h:
@@ -279,9 +283,12 @@ def _links(vault: str, symbols_path: str, notes: dict, vault_found: bool):
         # A file anchor is a link: a note that anchored only files (an
         # infra note naming compose.yml, no symbol at all) linked
         # something, and the linker does not report it unlinked either.
+        # An ambiguous note is not "unlinked" here either: its emptiness is
+        # the linker's published refusal, already counted above.
         unlinked = sum(1 for n, e in state["notes"].items()
                        if n in notes and not e["linked"]
-                       and not e.get("files"))
+                       and not e.get("files")
+                       and os.path.splitext(n)[0] not in ambiguous_ids)
         out["unlinked_count"] = unlinked
         if unlinked:
             problems.append(f"unlinked-notes: {unlinked} "
