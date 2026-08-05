@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.6.0 — the rails
+
+The direction is set out in [ROADMAP.md](ROADMAP.md): TraceLink is becoming
+the long-term memory of AI-assisted coding — file-based, tool-agnostic,
+verifiable. 0.6.0 removes everything a user had to remember to do, and one
+thing they should never have had to discover.
+
+- **The PyPI package is `tracelink-vault`.** The bare name `tracelink` on PyPI
+  belongs to an unrelated third-party project, so the README's own install
+  instructions handed readers someone else's code. The command is still
+  `tracelink`; the README now says all of this out loud. Publishing runs from
+  a tag-triggered workflow via trusted publishing — `RELEASING.md` documents
+  the one-time setup.
+- **The version is declared once.** It lives in four files, and 0.5.1 shipped
+  with the plugin manifests still saying 0.5.0. `scripts/bump.py --check`
+  now fails CI on drift; `--set` rewrites every declaration from
+  `pyproject.toml`, the single source of truth.
+- **Dotted references resolve without guessing.** `payments.validate` links
+  through a registered qualified name, or — when the backend cannot qualify —
+  through the path suffix (`payments.py`, `payments/validate.py`,
+  `payments/__init__.py`). A prefix that matches two locations stays
+  ambiguous; one that matches none withholds the link (contradictory evidence
+  is not no evidence); a dotted claim and a cited path that disagree are
+  reported, never arbitrated. `self.`, `cls.` and `this.` are grammar, not
+  location evidence — they are stripped, and the tail behaves as a bare name.
+- **Hotspots.** "Three notes about one function is a signal worth seeing" was
+  the README's argument; now `CODE-INDEX.md` shows it unprompted — symbols
+  with two or more notes, and per-file rollups. On a vault with hotspots, the
+  first `link --check` after upgrading reports the index as changed (exit 1):
+  run `link` once to adopt the new section.
+- **Linking is incremental.** A sidecar (`.tracelink-link-state.json`) records
+  content hashes and resolved locations; unchanged notes skip candidate
+  extraction and disambiguation entirely — ~4–5× faster on an unchanged
+  vault — and their managed blocks are still byte-compared against the cached
+  rendering, so a hand-edited block is caught and repaired. Correctness rules:
+  a moved symbol relinks every note that named it, `--check` ignores the state
+  and never writes it, a corrupt or older state falls back to a full pass,
+  `--full` forces one.
+- **`tracelink status`.** One command answers: is the vault in sync with the
+  register, is the index fresh, are the links current, what is open and high?
+  Unknowns are declared as unknowns — status estimates nothing. `--strict`
+  turns problems into exit 1 for CI; `--format json` is stable and pure.
+- **`tracelink hook`.** The README said "wire it into a hook"; now the tool
+  does it: `hook install` writes a marker-delimited block into
+  `.git/hooks/post-commit` (worktree-aware, append-only next to existing
+  hooks, idempotent), `hook remove` deletes exactly that block, `hook status`
+  reports. The hook never blocks a commit.
+- **The Claude Code plugin keeps the vault fresh by itself.** Edits mark the
+  vault stale (a touch, under 10 ms); the end of the turn refreshes index and
+  links once, silently, and never blocks the session. Repositories past the
+  scan ceiling are skipped with a hint instead of a stall.
+
 ## 0.5.1 — safety and diagnostics, from first real-project use
 
 Found by running tracelink against a clinical codebase rather than by review.

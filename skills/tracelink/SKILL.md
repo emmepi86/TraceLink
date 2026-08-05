@@ -49,15 +49,37 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/link.py" \
 ```
 
 `--check` writes nothing and exits 1 when anything is stale — use it in CI.
-`--explain` prints why each link was made.
+`--explain` prints why each link was made. Linking is incremental: unchanged
+notes are skipped (their blocks stay byte-verified); `--full` forces a
+complete pass.
 
 Outputs: `<VAULT>/<ID>.md` per finding, `INDEX.md` (status and severity table,
-open+high listed separately), `CODE-INDEX.md` (symbol -> notes).
+open+high listed separately), `CODE-INDEX.md` (symbol -> notes, plus a
+Hotspots section: symbols with ≥2 notes and per-file rollups — check it first
+when asked "what is known about this code").
+
+Two more commands:
+
+```bash
+# one-shot health of register, vault, index and links (--strict = exit 1 for CI)
+tracelink status --register "${CLAUDE_PROJECT_DIR}/FINDINGS.md" \
+  --vault "${CLAUDE_PROJECT_DIR}/.tracelink/vault" \
+  --symbols "${CLAUDE_PROJECT_DIR}/.tracelink/symbols.json"
+
+# refresh index+links on every git commit (marker-delimited, never blocks)
+tracelink hook install && tracelink hook status
+```
+
+When this plugin is installed the vault also refreshes itself inside a
+session: edits mark it stale, the end of the turn re-runs index+link once
+(only in projects where `.tracelink/` exists).
 
 ## Things that will bite
 
-- **Re-run steps 1 and 3 after code changes.** A stale symbol map points notes at
-  lines that have moved, with no sign that anything is wrong.
+- **Re-run steps 1 and 3 after code changes** — or let it happen for you:
+  `tracelink hook install` (git) and the plugin's auto-refresh (in-session)
+  both exist for exactly this. A stale symbol map points notes at lines that
+  have moved, with no sign that anything is wrong.
 - **Status comes from each finding's own headings, never its body.** A note
   saying "this already caused a withdrawn finding (X-16)" is not itself
   withdrawn. `split.py` enforces this; if you reimplement it, keep it.

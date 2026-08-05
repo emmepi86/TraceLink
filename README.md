@@ -22,6 +22,11 @@
   By <b>Massimiliano Paragnani</b> — <a href="https://aosol.cloud">aosol.cloud</a></sub>
 </p>
 
+<p align="center">
+  <b>Where this is going:</b> the long-term memory of AI-assisted coding —<br>
+  file-based, tool-agnostic, verifiable. See <a href="ROADMAP.md">ROADMAP.md</a>.
+</p>
+
 ---
 
 ## The problem
@@ -160,7 +165,31 @@ tracelink split --register FINDINGS.md --out vault/ --prefix RES
 tracelink link --vault vault/ --symbols symbols.json --repo /path/to/code
 ```
 
-The original register is never modified.
+The original register is never modified. Linking is incremental: unchanged
+notes are skipped outright (their rendered blocks are still byte-verified
+against the cache, so hand edits are caught and repaired), which makes the
+re-run after a code change cheap enough to automate — see below. `--full`
+forces a complete pass.
+
+Two more commands close the loop:
+
+```bash
+# one-shot health: register↔vault sync, index freshness, links, open+high
+tracelink status --register FINDINGS.md --vault vault/ --symbols symbols.json
+tracelink status ... --strict          # CI form: exit 1 on any problem
+
+# never run steps 1+3 by hand again: refresh on every commit
+tracelink hook install                  # writes .git/hooks/post-commit
+tracelink hook status | remove
+```
+
+`status` estimates nothing: what it cannot establish it reports as unknown.
+The git hook is marker-delimited, coexists with hooks you already have, and
+never blocks a commit. Inside Claude Code, the plugin does the same job
+without git: edits mark the vault stale, the end of the turn refreshes it.
+
+Hotspots come for free: `CODE-INDEX.md` lists the symbols with two or more
+notes and per-file rollups — the fragile places surface by themselves.
 
 ### Symbol backends
 
