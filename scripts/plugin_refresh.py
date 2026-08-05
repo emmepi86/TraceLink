@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
 """Keep a project's tracelink vault fresh from the Claude Code plugin hooks.
 
-Two modes, two budgets:
+Three modes, three budgets:
 
   mark     runs after every Edit/Write/MultiEdit (PostToolUse). If the project
            has a `.tracelink/` directory, touch `.tracelink/.stale` and stop.
            Nothing else — no tracelink import, no tree walk — because this
            runs on EVERY edit and must cost less than the edit itself.
+  consult  what on-edit.sh actually invokes: mark, then — only when the
+           project opted in with `"consult": true` in `.tracelink/config.json`
+           — read the hook payload from stdin and, if the linker's sidecar
+           state says the vault holds notes about the edited file, print a
+           `hookSpecificOutput.additionalContext` JSON so Claude Code injects
+           those findings into the same turn. The lookup uses ONLY the
+           link-state already on disk (no tracelink import, no vault walk),
+           and only the notes that actually match get their frontmatter read.
+           A file without notes costs one config read and one json load.
   refresh  runs once at end of turn (Stop). If the marker exists, rebuild
            `.tracelink/symbols.json` and relink `.tracelink/vault` in-process,
            then remove the marker. If the repository holds more source files
@@ -54,6 +63,164 @@ def mark(project):
     marker = os.path.join(tl, MARKER)
     with open(marker, "a"):
         os.utime(marker, None)
+
+
+#: Severity sort rank for consult; anything unknown sinks below `low`.
+_SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+
+#: How many notes consult will show before deferring to CODE-INDEX.md.
+_MAX_CONSULT_NOTES = 5
+
+_STATE_FILE = ".tracelink-link-state.json"
+_STATE_SCHEMA = 2
+
+
+def _read_config(project):
+    """The opt-in gates from `.tracelink/config.json`, as a dict.
+
+    Absent file, unreadable file, broken json, json that is not an object:
+    all mean `{}` — and a missing key means the feature stays OFF. Consult
+    speaks up inside other people's turns; it must be asked for.
+    """
+    import json
+    try:
+        with open(os.path.join(project, ".tracelink", "config.json"),
+                  encoding="utf-8") as fh:
+            cfg = json.load(fh)
+    except Exception:  # noqa: BLE001 — no config shape may break a hook
+        return {}
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _note_head(vault, note_file):
+    """(id, status, severity, title) from the top of one note — and only the
+    top: the frontmatter plus the first `# ` heading after it. Notes can be
+    long; consult lives inside a PostToolUse budget and never reads bodies."""
+    stem = note_file[:-3] if note_file.endswith(".md") else note_file
+    note_id, status, severity, title = stem, "", "", ""
+    try:
+        with open(os.path.join(vault, note_file), encoding="utf-8") as fh:
+            in_front = False
+            for lineno, raw in enumerate(fh):
+                if lineno > 200:  # no heading by now — give up, keep the id
+                    break
+                line = raw.strip()
+                if lineno == 0 and line == "---":
+                    in_front = True
+                    continue
+                if in_front:
+                    if line == "---":
+                        in_front = False
+                        continue
+                    key, _, value = line.partition(":")
+                    key, value = key.strip(), value.strip()
+                    if key == "tracelink_id" and value:
+                        note_id = value
+                    elif key == "status":
+                        status = value
+                    elif key == "severity":
+                        severity = value
+                    continue
+                if line.startswith("# "):
+                    title = line[2:].strip()
+                    break
+    except OSError:
+        pass
+    return note_id, status, severity, _tidy_title(title, note_id, severity)
+
+
+def _tidy_title(title, note_id, severity):
+    """`RES-01 — totals ignore tax [HIGH]` → `totals ignore tax`: the bullet
+    already prints the id and severity next to the title."""
+    for sep in (" — ", " – ", " - "):
+        if title.startswith(note_id + sep):
+            title = title[len(note_id) + len(sep):]
+            break
+    if severity:
+        suffix = "[" + severity + "]"
+        if title.lower().endswith(suffix.lower()):
+            title = title[:-len(suffix)]
+    return title.strip()
+
+
+def consult(project, payload_text):
+    """The additionalContext JSON for the file in `payload_text`, or "".
+
+    Every early return is silence: gate closed, payload unusable, state
+    missing/corrupt/wrong-schema, file not linked by any note. Only when the
+    link-state names the edited file does this open anything under the vault,
+    and then only the heads of the matching notes.
+    """
+    import json
+
+    if _read_config(project).get("consult") is not True:
+        return ""
+    try:
+        payload = json.loads(payload_text)
+    except Exception:  # noqa: BLE001
+        return ""
+    tool_input = payload.get("tool_input") if isinstance(payload, dict) else None
+    file_path = tool_input.get("file_path") if isinstance(tool_input, dict) else None
+    if not isinstance(file_path, str) or not file_path:
+        return ""
+    if not os.path.isabs(file_path):
+        file_path = os.path.join(project, file_path)
+    rel = os.path.relpath(os.path.realpath(file_path),
+                          os.path.realpath(project)).replace(os.sep, "/")
+
+    vault = os.path.join(project, ".tracelink", "vault")
+    try:
+        with open(os.path.join(vault, _STATE_FILE), encoding="utf-8") as fh:
+            state = json.load(fh)
+    except Exception:  # noqa: BLE001 — absent or corrupt state is silence
+        return ""
+    if not isinstance(state, dict) or state.get("schema_version") != _STATE_SCHEMA:
+        return ""
+    notes = state.get("notes")
+    if not isinstance(notes, dict):
+        return ""
+
+    hits = []  # (note_file, [(symbol, line), ...]) for notes linking `rel`
+    for note_file, entry in notes.items():
+        if not isinstance(entry, dict):
+            continue
+        linked, locations = entry.get("linked"), entry.get("locations")
+        if not isinstance(linked, list) or not isinstance(locations, list):
+            continue
+        symbols = [(name, loc.get("line"))
+                   for name, loc in zip(linked, locations)
+                   if isinstance(name, str) and isinstance(loc, dict)
+                   and loc.get("path") == rel]
+        if symbols:
+            hits.append((str(note_file), symbols))
+    if not hits:
+        return ""
+
+    ranked = []
+    for note_file, symbols in hits:
+        note_id, status, severity, title = _note_head(vault, note_file)
+        ranked.append((0 if status == "open" else 1,
+                       _SEVERITY_RANK.get(severity, len(_SEVERITY_RANK)),
+                       -len(symbols), note_id,
+                       (note_id, status, severity, title, symbols)))
+    ranked.sort(key=lambda r: r[:4])
+    shown = [r[-1] for r in ranked[:_MAX_CONSULT_NOTES]]
+    hidden = len(ranked) - len(shown)
+
+    lines = [f"TraceLink — known findings about this file ({rel}):"]
+    for note_id, status, severity, title, symbols in shown:
+        tag = "/".join(p for p in (status, severity) if p) or "?"
+        syms = ", ".join(f"{name} (L{line})" if isinstance(line, int)
+                         else name for name, line in symbols)
+        head = f"- {note_id} [{tag}]" + (f" {title}" if title else "")
+        lines.append(f"{head} — symbols: {syms}")
+    lines.append("(full notes: .tracelink/vault/<id>.md — read before "
+                 "assuming this area is clean)")
+    if hidden:
+        lines.append(f"…and {hidden} more in CODE-INDEX.md")
+    return json.dumps({"hookSpecificOutput": {
+        "hookEventName": "PostToolUse",
+        "additionalContext": "\n".join(lines)}})
 
 
 def _count_source_files(project, limit):
@@ -149,6 +316,15 @@ def main(argv=None) -> int:
         project = resolve_project(argv[1] if len(argv) > 1 else None)
         if mode == "mark":
             mark(project)
+        elif mode == "consult":
+            # One process for the whole PostToolUse: mark first (the cheap,
+            # unconditional duty), then read the payload the wrapper now
+            # forwards and maybe speak. Reading stdin also drains it, so the
+            # writer never blocks whatever else happens.
+            mark(project)
+            out = consult(project, sys.stdin.read())
+            if out:
+                print(out)
         elif mode == "refresh":
             refresh(project)
         # any other mode: a misconfigured hook must not become a blocked turn
