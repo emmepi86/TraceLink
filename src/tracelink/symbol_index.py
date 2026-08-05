@@ -434,6 +434,12 @@ def main() -> int:
         # instead of passing for equivalent.
         config["patterns"] = {ext: rx.pattern for ext, rx in _DEF_PATTERNS}
     partial = bool(fp_warnings) or any("max-files-reached" in n for n in notes)
+    # `--out .tracelink/symbols.json` before anything else created the
+    # directory raised FileNotFoundError; the out path is ours to write, so
+    # its parent is ours to create.
+    out_dir = os.path.dirname(args.out)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
     with open(args.out, "w") as fh:
         json.dump({
             "schema_version": 3,

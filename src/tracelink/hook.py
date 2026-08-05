@@ -35,7 +35,8 @@ against the repository root.
 
 Exit codes: 0 on success and for every no-op (remove with nothing to
 remove, status of an uninstalled hook); 2 when --repo is not a git
-repository or the marker pair is corrupted. No tracebacks.
+repository, the marker pair is corrupted, or an existing post-commit is
+not UTF-8 text (refused untouched, by every action). No tracebacks.
 """
 
 from __future__ import annotations
@@ -57,6 +58,20 @@ _PATHS_LINE = re.compile(r"^# paths: (.*)$", re.M)
 def _fail(message: str) -> int:
     print(f"tracelink hook: {message}", file=sys.stderr)
     return 2
+
+
+_NOT_UTF8 = "existing post-commit is not UTF-8 text; refusing to touch it"
+
+
+def _read_hook(path: str):
+    """The hook file's text, or None when it is not UTF-8. A binary
+    post-commit is not ours to parse, let alone rewrite — every caller turns
+    None into the same polite exit 2 instead of a traceback."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+    except UnicodeDecodeError:
+        return None
 
 
 def hooks_dir(repo: str):
@@ -124,7 +139,9 @@ def install(repo: str, vault: str, symbols: str) -> int:
         print(f"installed {path}")
         return 0
 
-    text = open(path).read()
+    text = _read_hook(path)
+    if text is None:
+        return _fail(_NOT_UTF8)
     try:
         parts = _split(text)
     except ValueError as exc:
@@ -156,7 +173,9 @@ def remove(repo: str) -> int:
     if not os.path.exists(path):
         print(f"no {_HOOK_NAME} hook at {path} — nothing to remove")
         return 0
-    text = open(path).read()
+    text = _read_hook(path)
+    if text is None:
+        return _fail(_NOT_UTF8)
     try:
         parts = _split(text)
     except ValueError as exc:
@@ -196,7 +215,9 @@ def status(repo: str) -> int:
     if not os.path.exists(path):
         print("installed:          no")
         return 0
-    text = open(path).read()
+    text = _read_hook(path)
+    if text is None:
+        return _fail(_NOT_UTF8)
     try:
         parts = _split(text)
     except ValueError as exc:

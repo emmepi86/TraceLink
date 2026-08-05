@@ -489,6 +489,35 @@ class TheSymbolIndexCarriesProvenance(unittest.TestCase):
             self.assertIn("fingerprint", d["repository"])
 
 
+class TheIndexerCreatesTheOutDirectory(unittest.TestCase):
+    """`--out .tracelink/symbols.json` with no .tracelink/ yet raised
+    FileNotFoundError — main() must create the parent directory itself."""
+
+    def test_out_in_a_missing_directory_is_created(self):
+        import contextlib
+        import io
+        import json
+        from unittest import mock
+        from tracelink import symbol_index
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = os.path.join(tmp, "repo")
+            os.makedirs(repo)
+            with open(os.path.join(repo, "app.py"), "w") as fh:
+                fh.write("def compute_total():\n    return 0\n")
+            out = os.path.join(tmp, "state", ".tracelink", "symbols.json")
+            self.assertFalse(os.path.isdir(os.path.dirname(out)))
+            buf = io.StringIO()
+            with mock.patch.object(sys, "argv",
+                                   ["index", "--repo", repo,
+                                    "--backend", "scan", "--out", out]), \
+                    contextlib.redirect_stdout(buf):
+                rc = symbol_index.main()
+            self.assertEqual(rc, 0)
+            self.assertTrue(os.path.isfile(out))
+            with open(out) as fh:
+                self.assertIn("compute_total", json.load(fh)["symbols"])
+
+
 class EveryBackendPreservesDuplicates(unittest.TestCase):
     """0.3.0 shipped `_add()` to keep every definition and left `label in out`
     in the graphify path, so that backend still resolved homonyms by node

@@ -262,6 +262,68 @@ class UnknownIsSaidOutLoudNotEstimated(_StatusCase):
         self.assertFalse(payload["ok"])
 
 
+class AmbiguousByDesignIsNotAProblem(_StatusCase):
+    """A note whose only reference is defined in more than one place never
+    enters the link-state — the linker refuses to guess. Status used to count
+    it in notes_unverified forever (ok:no on every run, with nothing to fix).
+    The linker already publishes its refusal in CODE-INDEX.md's "## Ambiguous
+    references" section; status reads it and reports the note in the additive
+    `notes_ambiguous` field instead — no problem, ok stays true."""
+
+    def make_ambiguous(self):
+        # A second definition of parse_payload: RES-01's only symbol is now
+        # ambiguous, so the linker withholds the link and records the refusal.
+        with open(os.path.join(self.repo, "src", "parser_v2.py"), "w") as fh:
+            fh.write("def parse_payload(body):\n    return {}\n")
+        self.pipeline()
+
+    def test_an_only_ambiguous_note_is_ambiguous_not_unverified(self):
+        self.make_ambiguous()
+        rc, payload, err = self.status_json()
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(payload["links"]["notes_ambiguous"], 1)
+        self.assertEqual(payload["links"]["notes_unverified"], 0)
+        self.assertEqual(payload["problems"], [])
+        self.assertTrue(payload["ok"])
+
+    def test_the_text_report_says_ambiguous_by_design(self):
+        self.make_ambiguous()
+        rc, out, err = self.status()
+        self.assertEqual(rc, 0, out + err)
+        self.assertIn("ambiguous by design", out)
+        self.assertIn("ok:                 yes", out)
+
+    def test_a_really_tampered_note_is_still_a_problem(self):
+        self.make_ambiguous()
+        path = os.path.join(self.vault, "RES-02.md")
+        text = open(path).read().replace(
+            "retries forever", "now names `mystery_helper` and retries forever")
+        open(path, "w").write(text)
+        rc, payload, err = self.status_json()
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(payload["links"]["notes_unverified"], 1)
+        self.assertFalse(payload["ok"])
+        self.assertTrue(any("cannot vouch" in p for p in payload["problems"]),
+                        payload["problems"])
+
+
+class TheLinkerApiStatusUsesIsPublic(unittest.TestCase):
+    """What status imports from the linker must be public names; the private
+    spellings stay as aliases for internal compatibility."""
+
+    def test_public_names_alias_the_privates(self):
+        from tracelink import linker
+        self.assertIs(linker.FM_BLOCK, linker._FM_BLOCK)
+        self.assertIs(linker.sha256_text, linker._sha)
+        self.assertEqual(linker.STATE_FILE, linker._STATE_FILE)
+        self.assertEqual(linker.STATE_FILE, ".tracelink-link-state.json")
+
+    def test_status_no_longer_reaches_for_private_names(self):
+        import inspect
+        from tracelink import status
+        self.assertNotIn("linker._", inspect.getsource(status))
+
+
 class TheCliDispatchesStatus(_StatusCase):
     def test_tracelink_status_reaches_the_module(self):
         from tracelink import cli

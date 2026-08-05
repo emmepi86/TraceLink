@@ -165,6 +165,36 @@ class RemoveIsANoOpWhenThereIsNothingToRemove(_HookCase):
         self.assertEqual(self.read(), CUSTOM)
 
 
+class ANonUtf8PostCommitIsRefusedNotATraceback(_HookCase):
+    """A pre-existing binary (or otherwise non-UTF-8) post-commit is not ours
+    to parse, let alone rewrite: every action refuses with a clear message
+    and exit 2, and the file keeps its bytes."""
+
+    BINARY = b"#!/bin/sh\n\xff\xfe\x00 not text \x9c\n"
+
+    def setUp(self):
+        super().setUp()
+        with open(self.hook_path, "wb") as fh:
+            fh.write(self.BINARY)
+
+    def assert_refused(self, rc, out, err):
+        self.assertEqual(rc, 2, out + err)
+        self.assertIn("not UTF-8", out + err)
+        self.assertIn("refusing to touch it", out + err)
+        self.assertNotIn("Traceback", out + err)
+        with open(self.hook_path, "rb") as fh:
+            self.assertEqual(fh.read(), self.BINARY)
+
+    def test_install_refuses(self):
+        self.assert_refused(*self.hook("install", "--repo", self.repo))
+
+    def test_remove_refuses(self):
+        self.assert_refused(*self.hook("remove", "--repo", self.repo))
+
+    def test_status_refuses(self):
+        self.assert_refused(*self.hook("status", "--repo", self.repo))
+
+
 class OutsideAGitRepositoryTheAnswerIsTwo(_HookCase):
     def test_install_fails_politely(self):
         plain = os.path.join(self._tmp.name, "not-a-repo")

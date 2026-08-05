@@ -78,6 +78,10 @@ MARKER = ".stale"
 _SESSION_MARKER = ".session-edits"
 _BASELINE_MARKER = ".capture-baseline"
 _PROMPTED_MARKER = ".capture-prompted"
+#: Deliberately NOT a capture marker and NOT cleared by session-clear: the
+#: repository stays large between sessions, so the over-threshold hint is
+#: worth one print ever, not one per turn — or one per session.
+_SIZE_HINT_MARKER = ".size-hint-shown"
 _DEFAULT_REGISTER = "FINDINGS.md"
 
 
@@ -374,9 +378,15 @@ def refresh(project):
         os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
     if _count_source_files(project, MAX_FILES) > MAX_FILES:
-        print(f"tracelink: over {MAX_FILES} source files — automatic refresh "
-              "skipped; run `tracelink index` + `tracelink link` manually",
-              file=sys.stderr)
+        # The skip happens every turn; the explanation is owed once. The
+        # sentinel persists across sessions on purpose — the repository does
+        # not shrink at a session boundary.
+        hint = os.path.join(tl, _SIZE_HINT_MARKER)
+        if not os.path.exists(hint):
+            print(f"tracelink: over {MAX_FILES} source files — automatic "
+                  "refresh skipped; run `tracelink index` + `tracelink link` "
+                  "manually", file=sys.stderr)
+            _touch(hint)
         return
 
     from tracelink.linker import main as link_main

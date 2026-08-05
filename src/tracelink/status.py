@@ -31,7 +31,10 @@ JSON report (`--format json` prints ONLY the JSON), top-level keys exactly
              generated_notes, notes_on_disk, missing_in_vault, extra_in_vault
   index      path, found, freshness, reasons, partial
   links      state_present, state_age_seconds, symbols_fingerprint_matches,
-             notes_recorded, notes_unverified, unlinked_count (int or
+             notes_recorded, notes_unverified, notes_ambiguous (notes the
+             linker refused to link because their references are ambiguous —
+             read from CODE-INDEX.md's "## Ambiguous references" section,
+             reported but never a problem), unlinked_count (int or
              "unknown (run link)"), unlinked_by_reason (mapping, or
              "unknown (run link)" — the state does not record reasons)
   findings   total, by_status, open_high (id, severity, title)
@@ -90,7 +93,7 @@ def _owned_notes(vault: str) -> dict:
 
 def _frontmatter_fields(text: str) -> dict:
     """Top-level `key: value` pairs of the frontmatter block."""
-    m = linker._FM_BLOCK.match(text)
+    m = linker.FM_BLOCK.match(text)
     out = {}
     if not m:
         return out
@@ -189,16 +192,42 @@ def _index(symbols_path: str, repo: str):
     return out, problems
 
 
+#: Wikilink target: `[[RES-01]]` → `RES-01`.
+_WIKILINK = re.compile(r"\[\[([^\]|#\n]+)\]\]")
+_AMBIGUOUS_HEADING = "\n## Ambiguous references\n"
+
+
+def _ambiguous_ids(vault: str) -> set:
+    """Note ids the linker itself declared ambiguous: the wikilinks of the
+    "## Ambiguous references" section of CODE-INDEX.md, which every link run
+    rebuilds. A note referenced there linked nothing by the linker's REFUSAL
+    to guess between definitions — that is a recorded decision, not a state
+    the vault has drifted out of."""
+    try:
+        text = open(os.path.join(vault, "CODE-INDEX.md"),
+                    errors="replace").read()
+    except OSError:
+        return set()
+    start = text.find(_AMBIGUOUS_HEADING)
+    if start == -1:
+        return set()
+    section = text[start + len(_AMBIGUOUS_HEADING):]
+    stop = section.find("\n## ")
+    if stop != -1:
+        section = section[:stop]
+    return set(_WIKILINK.findall(section))
+
+
 def _links(vault: str, symbols_path: str, notes: dict, vault_found: bool):
     problems = []
     out = {"state_present": False, "state_age_seconds": None,
            "symbols_fingerprint_matches": None, "notes_recorded": None,
-           "notes_unverified": None,
+           "notes_unverified": None, "notes_ambiguous": None,
            "unlinked_count": "unknown (run link)",
            "unlinked_by_reason": "unknown (run link)"}
     if not vault_found:
         return out, problems  # vault-not-found is already the problem
-    state_path = os.path.join(vault, linker._STATE_FILE)
+    state_path = os.path.join(vault, linker.STATE_FILE)
     if not os.path.exists(state_path):
         problems.append("link-state-missing (run link)")
         return out, problems
@@ -214,7 +243,7 @@ def _links(vault: str, symbols_path: str, notes: dict, vault_found: bool):
     matches = None
     try:
         with open(symbols_path, "rb") as fh:
-            matches = linker._sha(fh.read()) == state["symbols_fingerprint"]
+            matches = linker.sha256_text(fh.read()) == state["symbols_fingerprint"]
     except OSError:
         matches = None
     out["symbols_fingerprint_matches"] = matches
@@ -223,18 +252,26 @@ def _links(vault: str, symbols_path: str, notes: dict, vault_found: bool):
                         "last link (run link)")
 
     # A note the state can vouch for is one it recorded with the content
-    # hash the note still has. Anything else — edited since, deleted since,
-    # or never recorded because its analysis was ambiguous — is unverified,
-    # and the unlinked count over an unverified vault is not a count.
-    unverified = 0
+    # hash the note still has. Anything else — edited since, deleted since —
+    # is unverified, and the unlinked count over an unverified vault is not
+    # a count. One documented exception: a note the state never recorded
+    # BECAUSE its analysis was ambiguous. The linker publishes that refusal
+    # in CODE-INDEX.md, so counting the note unverified forever (ok:no with
+    # nothing to fix) was noise, not caution — it is ambiguous by design.
+    ambiguous_ids = _ambiguous_ids(vault)
+    unverified = ambiguous = 0
     for name, text in notes.items():
         entry = state["notes"].get(name)
+        if entry is None and os.path.splitext(name)[0] in ambiguous_ids:
+            ambiguous += 1
+            continue
         h = linker.note_fingerprint(linker.matchable(text),
                                     linker.read_overrides(text))
         if entry is None or entry["content_hash"] != h:
             unverified += 1
     unverified += len(set(state["notes"]) - set(notes))
     out["notes_unverified"] = unverified
+    out["notes_ambiguous"] = ambiguous
     if unverified:
         problems.append(f"link-state-stale: {unverified} note(s) the state "
                         f"cannot vouch for (run link)")
@@ -321,6 +358,9 @@ def render_text(report: dict) -> str:
         if links["notes_unverified"]:
             lines.append(f"notes_unverified:   {links['notes_unverified']} "
                          f"since the last link")
+        if links["notes_ambiguous"]:
+            lines.append(f"notes_ambiguous:    {links['notes_ambiguous']} — "
+                         f"ambiguous by design (see CODE-INDEX.md)")
         lines.append(f"unlinked_notes:     {links['unlinked_count']}")
     else:
         lines.append("link_state:         absent (run link)")

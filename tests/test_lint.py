@@ -166,6 +166,19 @@ class TestProseOnly(_LintCase):
         self.assertNotIn("prose-only", self.codes_for(json.loads(out)))
 
 
+class TheMinLenThresholdIsShared(unittest.TestCase):
+    """The linker owns the default; lint imports it. Two spellings of the
+    same number drift — the 0.7.1 review found the mirrored copy."""
+
+    def test_lint_uses_the_linkers_public_default(self):
+        from tracelink import linker
+        self.assertEqual(linker.DEFAULT_MIN_LEN, 7)
+        self.assertIs(lint.DEFAULT_MIN_LEN, linker.DEFAULT_MIN_LEN)
+
+    def test_the_mirrored_private_copy_is_gone(self):
+        self.assertFalse(hasattr(lint, "_MIN_LEN"))
+
+
 class TestUnknownSymbols(_LintCase):
     def test_unknown_identifier_warns_with_the_name(self):
         self.write_register("## RES-01 — ghost [HIGH]\n### STATUS: OPEN\n"
@@ -300,6 +313,33 @@ class TestAnchorsExcludeStopwordsAndUbiquity(_LintCase):
         # In the index, so never unknown — neither warning nor info.
         self.assertNotIn("unknown-symbols", self.codes_for(report))
         self.assertEqual(report["infos"], [])
+
+    def test_prose_only_over_backticked_ubiquity_gets_the_honest_detail(self):
+        """F7: telling the author to "name the exact symbols in backticks"
+        when the finding already has backticks — just stopwords or ubiquitous
+        ones — is advice already followed. The detail must say what is
+        actually missing."""
+        self.write_register("## RES-01 — route config [HIGH]\n"
+                            "### STATUS: OPEN\n"
+                            "`dynamic` is forced on every route.\n")
+        symbols = self.write_symbols(self.ubiquitous("dynamic"))
+        rc, out, _ = _run(["--register", self.register,
+                           "--symbols", symbols, "--format", "json"])
+        self.assertEqual(rc, 1)
+        detail = [w["detail"] for w in json.loads(out)["warnings"]
+                  if w["code"] == "prose-only"][0]
+        self.assertNotIn("name the exact symbols in backticks", detail)
+        self.assertIn("stopwords or ubiquitous", detail)
+
+    def test_prose_only_without_backticks_keeps_the_original_detail(self):
+        self.write_register(PROSE_ONLY)
+        symbols = self.write_symbols(["compute_total"])
+        rc, out, _ = _run(["--register", self.register,
+                           "--symbols", symbols, "--format", "json"])
+        self.assertEqual(rc, 1)
+        detail = [w["detail"] for w in json.loads(out)["warnings"]
+                  if w["code"] == "prose-only"][0]
+        self.assertIn("name the exact symbols in backticks", detail)
 
     def test_real_anchor_still_demotes_unknowns_beside_ubiquity(self):
         self.write_register("## RES-01 — cache [HIGH]\n### STATUS: OPEN\n"

@@ -61,15 +61,10 @@ import sys
 from typing import Dict, List, Optional
 
 from .linker import (_CAMEL, _CODE_SPAN, _DEFAULT_STOP, _DOTTED, _SNAKE,
-                     _strip_syntax_prefixes, candidates, normalise)
+                     DEFAULT_MIN_LEN, _strip_syntax_prefixes, candidates,
+                     normalise)
 from .splitter import (_SEVERITY_RE, _STATUS_RE, finding_pattern, severity,
                        split)
-
-#: The linker's --min-len default: a bare identifier shorter than this would
-#: be filtered there, so lint must not count it as linkable here. Mirrored,
-#: not imported — the linker states it only as an argparse default, so there
-#: is nothing to import; if that default ever changes, this must follow it.
-_MIN_LEN = 7
 
 #: A symbol defined in more than this many distinct files is UBIQUITOUS and
 #: never counts as an anchor. Next.js made the need concrete: `dynamic`,
@@ -230,12 +225,20 @@ def check_finding(fid: str, blocks: List[str], prefix: str,
             linkable = any(
                 name.lower() not in _DEFAULT_STOP
                 and not _is_ubiquitous(name, symbols)
-                for name, _ in candidates(blob, symbols, _MIN_LEN,
+                for name, _ in candidates(blob, symbols, DEFAULT_MIN_LEN,
                                           _DEFAULT_STOP))
     if not linkable:
-        warnings.append({"id": fid, "code": "prose-only",
-                         "detail": "no linkable identifiers — name the exact "
-                                   "symbols in backticks"})
+        # The advice must fit the failure. A finding that already has
+        # identifiers — necessarily all stopwords or ubiquitous, or it would
+        # be linkable — has followed "use backticks" to the letter; telling
+        # it to again is advice already taken.
+        if idents:
+            detail = ("the only backticked names are stopwords or "
+                      "ubiquitous — name the specific symbols involved")
+        else:
+            detail = ("no linkable identifiers — name the exact symbols "
+                      "in backticks")
+        warnings.append({"id": fid, "code": "prose-only", "detail": detail})
 
     # (b) unknown symbols: deliberate spellings the index cannot resolve.
     # A warning only when NOTHING in the finding is a reliable ANCHOR —

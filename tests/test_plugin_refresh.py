@@ -212,6 +212,44 @@ class TestRefresh(unittest.TestCase):
             self.assertIn("source files", err.getvalue(),
                           "the skip must say why, once")
 
+    def test_over_threshold_hint_is_printed_once_across_refreshes(self):
+        """The repo stays large between turns; the same hint on every Stop is
+        noise. A persistent sentinel spends it once — the marker is still
+        consumed every time."""
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = make_toy_project(tmp)
+            old = plugin_refresh.MAX_FILES
+            first, second = io.StringIO(), io.StringIO()
+            try:
+                plugin_refresh.MAX_FILES = 0
+                touch_marker(proj)
+                with contextlib.redirect_stderr(first):
+                    rc1 = plugin_refresh.main(["refresh", proj])
+                marker = touch_marker(proj)
+                with contextlib.redirect_stderr(second):
+                    rc2 = plugin_refresh.main(["refresh", proj])
+            finally:
+                plugin_refresh.MAX_FILES = old
+            self.assertEqual((rc1, rc2), (0, 0))
+            self.assertIn("source files", first.getvalue())
+            self.assertEqual(second.getvalue(), "",
+                             "the hint must be printed once, not every turn")
+            self.assertFalse(os.path.exists(marker),
+                             "the stale marker is consumed even when quiet")
+            self.assertTrue(os.path.exists(os.path.join(
+                proj, ".tracelink", ".size-hint-shown")))
+
+    def test_session_clear_keeps_the_size_hint_sentinel(self):
+        """A session boundary says nothing about the size of the repo: the
+        sentinel survives session-clear, unlike the capture markers."""
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, ".tracelink"))
+            sentinel = os.path.join(tmp, ".tracelink", ".size-hint-shown")
+            open(sentinel, "w").close()
+            r = run_hook("session-clear", tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertTrue(os.path.exists(sentinel))
+
     def test_a_failing_refresh_still_exits_zero(self):
         """Vault present, nothing indexable: whatever goes wrong inside stays
         inside. A hook that returns non-zero blocks Claude — never."""

@@ -66,6 +66,11 @@ _DEFAULT_STOP = {
     "severity", "sections", "related", "title", "notes",
 }
 
+#: The default --min-len threshold. Public on purpose: lint applies the same
+#: bar to bare identifiers, and importing the number is what keeps the two
+#: tools from drifting apart one default at a time.
+DEFAULT_MIN_LEN = 7
+
 _SNAKE = re.compile(r"\b(_?[a-z][a-z0-9_]*)\b")
 _CAMEL = re.compile(r"\b([A-Z][A-Za-z0-9]+)\b")
 _CODE_SPAN = re.compile(r"`([^`\n]{2,80})`")
@@ -97,7 +102,10 @@ _GENERATED_LINE = re.compile(r"^Related: .*$", re.M)
 
 
 
-_FM_BLOCK = re.compile(r"\A---\n(.*?)\n---\n", re.S)
+#: The frontmatter block, group 1 its inner text. Public: status parses the
+#: same frontmatter, and it should not have to reach for a private name.
+FM_BLOCK = re.compile(r"\A---\n(.*?)\n---\n", re.S)
+_FM_BLOCK = FM_BLOCK  # private alias kept for internal compatibility
 _OWNED = re.compile(r"^tracelink_schema:\s*1\s*$", re.M)
 
 
@@ -384,17 +392,25 @@ def write_atomic(path: str, content: str) -> None:
 # re-checkable from the inputs of the current run, and anything it cannot
 # prove is relinked in full. Naming follows `.tracelink-manifest.json`.
 
-_STATE_FILE = ".tracelink-link-state.json"
+#: Sidecar filename. Public: status locates the same file.
+STATE_FILE = ".tracelink-link-state.json"
+_STATE_FILE = STATE_FILE  # private alias kept for internal compatibility
 #: v2 caches each link's resolved location alongside its name, so the skip
 #: path renders the managed block from the state instead of disambiguating
 #: again. A v1 state — or any other version — is discarded whole.
 _STATE_SCHEMA = 2
 
 
-def _sha(data) -> str:
+def sha256_text(data) -> str:
+    """`sha256:<hex>` of text or bytes — the fingerprint spelling every
+    tracelink state file uses. Public: status recomputes the symbols
+    fingerprint with the same function that wrote it."""
     if isinstance(data, str):
         data = data.encode("utf-8", "replace")
     return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+_sha = sha256_text  # private alias kept for internal compatibility
 
 
 def note_fingerprint(body: str, overrides: dict) -> str:
@@ -607,8 +623,9 @@ def main() -> int:
     ap.add_argument("--symbols", required=True)
     ap.add_argument("--max-links", type=int, default=8,
                     help="cap per note, applied AFTER ranking (default 8)")
-    ap.add_argument("--min-len", type=int, default=7,
-                    help="minimum identifier length outside backticks (default 7)")
+    ap.add_argument("--min-len", type=int, default=DEFAULT_MIN_LEN,
+                    help="minimum identifier length outside backticks "
+                         f"(default {DEFAULT_MIN_LEN})")
     ap.add_argument("--report-unlinked", action="store_true",
                     help="list every note that linked nothing, with the reason")
     ap.add_argument("--require-linked", action="store_true",
