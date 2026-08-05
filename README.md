@@ -220,6 +220,10 @@ honest: no named symbols, unknown symbols, near-duplicate titles or missing
 
 Values must be JSON `true` — a `"true"` string or `1` stays off, silently.
 
+Capture prompts once per session: a fresh session (or `/clear`) re-arms it,
+while `--resume` deliberately keeps an already-spent prompt spent — resuming
+is the same working session, not a new chance to nag.
+
 ### Symbol backends
 
 Tried in order, first one that produces symbols wins. Force with `--backend`.

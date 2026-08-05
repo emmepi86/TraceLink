@@ -24,7 +24,8 @@ Paths must be absolute. When the plugin is invoked the working directory is the
 user's project, not the plugin — relative `scripts/...` only works from the
 TraceLink checkout.
 
-Installed (`pipx install tracelink`):
+Installed (`pipx install tracelink-vault` — the bare PyPI name `tracelink`
+is an unrelated project; the command is still `tracelink`):
 
 ```bash
 tracelink index --repo "${CLAUDE_PROJECT_DIR}" --out "${CLAUDE_PROJECT_DIR}/.tracelink/symbols.json"
