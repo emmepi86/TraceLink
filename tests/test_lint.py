@@ -5,7 +5,11 @@ Four rules, each catching a way a finding fails its future reader:
   prose-only        no linkable identifier at all — the linker will connect
                     it to nothing (detection reused from the linker itself)
   unknown-symbols   with --symbols: deliberate identifiers the index has
-                    never heard of — typos and renamed code
+                    never heard of — typos and renamed code. 0.7.1: warns
+                    only when the finding cites NO known symbol; alongside
+                    known ones the unknowns are INFO lines (`infos` in the
+                    JSON), because on the real benchmark 9/10 linked notes
+                    were warning over properties and config keys
   duplicate         with --vault: a title that normalises to an existing
                     note's title — the same discovery recorded twice
   missing-status /  the explicit `### STATUS:` / severity grammar the
@@ -190,6 +194,76 @@ class TestUnknownSymbols(_LintCase):
         self.assertNotIn("unknown-symbols", self.codes_for(json.loads(out)))
 
 
+HUB = ("## RES-01 — hub config [HIGH]\n### STATUS: OPEN\n"
+       "`getConfig` feeds `mintToken`, but `waitForStartMs` and `qrTtlSec` "
+       "are read before the hub config exists.\n")
+
+
+class TestUnknownSymbolsDemotedToInfo(_LintCase):
+    """Benchmark evidence (Todi): 9/10 real notes warned unknown-symbols
+    while linking perfectly — properties, env vars and config keys in
+    backticks are physiological. With at least one KNOWN symbol cited, the
+    unknowns must inform, not gate."""
+
+    def test_unknowns_beside_known_symbols_are_info_not_warnings(self):
+        self.write_register(HUB)
+        symbols = self.write_symbols(["getConfig", "mintToken"])
+        rc, out, _ = _run(["--register", self.register,
+                           "--symbols", symbols, "--format", "json"])
+        self.assertEqual(rc, 0, out)
+        report = json.loads(out)
+        self.assertEqual(report["warnings"], [])
+        infos = report["infos"]
+        self.assertEqual(len(infos), 2)
+        for info in infos:
+            self.assertEqual(set(info), {"id", "code", "detail"})
+            self.assertEqual(info["id"], "RES-01")
+            self.assertEqual(info["code"], "unknown-symbols")
+        blob = " ".join(i["detail"] for i in infos)
+        self.assertIn("waitForStartMs", blob)
+        self.assertIn("qrTtlSec", blob)
+
+    def test_only_unknowns_still_warns_and_gates(self):
+        self.write_register("## RES-01 — ghost [HIGH]\n### STATUS: OPEN\n"
+                            "`made_up_helper` corrupts the cache.\n")
+        symbols = self.write_symbols(["compute_total"])
+        rc, out, _ = _run(["--register", self.register,
+                           "--symbols", symbols, "--format", "json"])
+        self.assertEqual(rc, 1)
+        report = json.loads(out)
+        self.assertIn("unknown-symbols", self.codes_for(report, "RES-01"))
+        self.assertEqual(report["infos"], [])
+
+    def test_all_known_symbols_yield_neither_warning_nor_info(self):
+        self.write_register(GOOD)
+        symbols = self.write_symbols(["compute_total"])
+        rc, out, _ = _run(["--register", self.register,
+                           "--symbols", symbols, "--format", "json"])
+        report = json.loads(out)
+        self.assertNotIn("unknown-symbols", self.codes_for(report))
+        self.assertEqual(report["infos"], [])
+
+    def test_text_output_prints_info_lines_and_exits_zero(self):
+        self.write_register(HUB)
+        symbols = self.write_symbols(["getConfig", "mintToken"])
+        rc, out, _ = _run(["--register", self.register, "--symbols", symbols])
+        self.assertEqual(rc, 0, out)
+        info_lines = [l for l in out.splitlines() if l.startswith("INFO ")]
+        self.assertEqual(len(info_lines), 2)
+        for line in info_lines:
+            self.assertIn("RES-01", line)
+            self.assertIn("[unknown-symbols]", line)
+        self.assertFalse([l for l in out.splitlines()
+                          if l.startswith("WARN ")])
+
+    def test_infos_key_is_present_even_without_symbols(self):
+        self.write_register(GOOD)
+        rc, out, _ = _run(["--register", self.register, "--format", "json"])
+        report = json.loads(out)
+        self.assertIn("infos", report)
+        self.assertEqual(report["infos"], [])
+
+
 class TestDuplicates(_LintCase):
     def test_same_title_as_an_existing_note_warns(self):
         self.write_register("## RES-02 — Totals ignore TAX! [HIGH]\n"
@@ -288,9 +362,10 @@ class TestOutputAndExit(_LintCase):
         self.write_register(PROSE_ONLY)
         rc, out, _ = _run(["--register", self.register, "--format", "json"])
         report = json.loads(out)  # the WHOLE stdout must parse
-        self.assertEqual(set(report), {"findings_checked", "warnings"})
+        self.assertEqual(set(report), {"findings_checked", "warnings",
+                                       "infos"})
         self.assertEqual(report["findings_checked"], 1)
-        for w in report["warnings"]:
+        for w in report["warnings"] + report["infos"]:
             self.assertEqual(set(w), {"id", "code", "detail"})
 
     def test_text_prints_one_line_per_warning(self):

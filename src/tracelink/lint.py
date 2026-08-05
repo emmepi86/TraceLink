@@ -12,8 +12,17 @@ rules, each one a way a finding fails its future reader:
                     private reimplementation would drift and lint would start
                     promising links the linker refuses.
   unknown-symbols   with --symbols: deliberately-spelled identifiers the
-                    index has never heard of. Typos and renamed code, caught
-                    while the author still remembers what they meant.
+                    index has never heard of. A WARNING only when the finding
+                    cites NO known symbol at all — then the unknowns are the
+                    whole citation record, and they are typos or prose in
+                    backticks. Beside at least one known symbol they demote
+                    to INFO (`INFO …` lines, the JSON's `infos` array, exit
+                    code untouched): on the real-registry benchmark 9 of 10
+                    notes that linked perfectly still warned here, because
+                    backticked properties, env vars and config keys are
+                    physiological in real notes and no index defines them. A
+                    gate that cries almost every time gets ignored — and
+                    capture leans on lint.
   duplicate         with --vault: a title that normalises to an existing
                     note's title. The same discovery recorded twice reads as
                     two findings and links as none of them.
@@ -153,10 +162,12 @@ def vault_titles(vault: str) -> Dict[str, str]:
 
 def check_finding(fid: str, blocks: List[str], prefix: str,
                   symbols: Optional[dict],
-                  known_titles: Optional[Dict[str, str]]) -> List[dict]:
-    """The warnings one finding earns. Order is the rules' order in the
-    docstring, so the output reads the same as the documentation."""
-    warnings = []
+                  known_titles: Optional[Dict[str, str]]
+                  ) -> "tuple[List[dict], List[dict]]":
+    """(warnings, infos) one finding earns. Order is the rules' order in
+    the docstring, so the output reads the same as the documentation."""
+    warnings: List[dict] = []
+    infos: List[dict] = []
     blob = "\n\n".join(blocks)
     idents = deliberate_identifiers(blob)
 
@@ -172,15 +183,28 @@ def check_finding(fid: str, blocks: List[str], prefix: str,
                                    "symbols in backticks"})
 
     # (b) unknown symbols: deliberate spellings the index cannot resolve.
+    # A warning only when NOTHING in the finding is known — then the
+    # unknowns are all it cites, and fixing them is the whole job. Next to
+    # a known symbol they are almost always properties, env vars or config
+    # keys (the benchmark's 9/10), so they inform without gating.
     if symbols is not None:
         unknown = sorted(
             token for token in idents
             if (tail := token.rsplit(".", 1)[-1]) not in symbols
             and tail not in _DEFAULT_STOP)
         if unknown:
-            warnings.append({"id": fid, "code": "unknown-symbols",
-                             "detail": "names unknown symbols: "
-                                       + ", ".join(unknown)})
+            cites_known = any(token.rsplit(".", 1)[-1] in symbols
+                              for token in idents)
+            if cites_known:
+                infos.extend(
+                    {"id": fid, "code": "unknown-symbols",
+                     "detail": f"not in the index: {token} — informational, "
+                               "the finding already cites known symbols"}
+                    for token in unknown)
+            else:
+                warnings.append({"id": fid, "code": "unknown-symbols",
+                                 "detail": "names unknown symbols: "
+                                           + ", ".join(unknown)})
 
     # (c) duplicate: same normalised title as a DIFFERENT existing note.
     if known_titles:
@@ -204,7 +228,7 @@ def check_finding(fid: str, blocks: List[str], prefix: str,
         warnings.append({"id": fid, "code": "missing-severity",
                          "detail": "no SEVERITY (### SEVERITY: line or "
                                    "[HIGH]-style tag)"})
-    return warnings
+    return warnings, infos
 
 
 def _load_manifest(vault: str) -> dict:
@@ -266,21 +290,29 @@ def main() -> int:
                          for g in manifest.get("generated_notes") or []
                          if isinstance(g, str)}
 
-    checked, warnings = 0, []
+    checked, warnings, infos = 0, [], []
     for fid, blocks in split(args.register, prefix).items():
         if args.new_only and fid in already_split:
             continue
         checked += 1
-        warnings += check_finding(fid, blocks, prefix, symbols, known_titles)
+        warns, notes = check_finding(fid, blocks, prefix, symbols,
+                                     known_titles)
+        warnings += warns
+        infos += notes
 
     if args.format == "json":
         print(json.dumps({"findings_checked": checked,
-                          "warnings": warnings}, indent=1))
+                          "warnings": warnings,
+                          "infos": infos}, indent=1))
     else:
         for w in warnings:
             print(f"WARN {w['id']} [{w['code']}] {w['detail']}")
+        for i in infos:
+            print(f"INFO {i['id']} [{i['code']}] {i['detail']}")
         print(f"findings_checked: {checked}")
         print(f"warnings:         {len(warnings)}")
+        print(f"infos:            {len(infos)}")
+    # Only warnings gate: infos are context, never a reason to fail.
     return 1 if warnings else 0
 
 
