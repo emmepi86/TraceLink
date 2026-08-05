@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Keep a project's tracelink vault fresh from the Claude Code plugin hooks.
 
-Three modes, three budgets:
+Four modes, four budgets:
 
   mark     runs after every Edit/Write/MultiEdit (PostToolUse). If the project
            has a `.tracelink/` directory, touch `.tracelink/.stale` and stop.
@@ -22,6 +22,23 @@ Three modes, three budgets:
            than the scan backend would index (MAX_FILES), skip the work, say
            so once on stderr, and STILL remove the marker — a surviving marker
            would retry the same skip on every following turn.
+  capture-check
+           what on-stop.sh actually invokes: refresh, then — only when the
+           project opted in with `"capture": true` in `.tracelink/config.json`
+           — ask whether this session's edits were ever distilled into the
+           findings register. Three markers in `.tracelink/`, all distinct
+           from `.stale` (which refresh consumes every turn): `.session-edits`
+           says an edit happened while capture was on, `.capture-baseline`
+           freezes size+mtime+sha of the register BEFORE the session's first
+           edit (written by mark, so growth is measured against the
+           pre-session register), `.capture-prompted` says the one prompt was
+           already spent. When the register did not grow and the prompt is
+           unspent, print `{"decision": "block", "reason": ...}` — the
+           documented Stop-hook block for a command hook, which requires
+           exit 0 — with the distillation instruction as the reason. A
+           payload whose `stop_hook_active` is true always passes: that stop
+           IS the continuation our own block caused, and blocking it again
+           would loop forever.
 
 The project directory is resolved in this order (the overrides exist so tests
 can point the script at a fixture without touching the real environment):
@@ -47,6 +64,14 @@ MAX_FILES = 20000
 
 MARKER = ".stale"
 
+#: Capture markers. `.stale` is consumed by every refresh; these three live
+#: for a whole capture cycle — until the register grows — so they are
+#: separate files, not extra meanings piled onto `.stale`.
+_SESSION_MARKER = ".session-edits"
+_BASELINE_MARKER = ".capture-baseline"
+_PROMPTED_MARKER = ".capture-prompted"
+_DEFAULT_REGISTER = "FINDINGS.md"
+
 
 def resolve_project(arg=None):
     return (arg
@@ -63,6 +88,62 @@ def mark(project):
     marker = os.path.join(tl, MARKER)
     with open(marker, "a"):
         os.utime(marker, None)
+    _mark_session(project, tl)
+
+
+def _touch(path):
+    with open(path, "a"):
+        os.utime(path, None)
+
+
+def _mark_session(project, tl):
+    """Capture bookkeeping, gated like consult: it must be asked for.
+
+    On the FIRST edit of a session the register is fingerprinted into
+    `.capture-baseline` — before the session has had any chance to append to
+    it, so `capture_check` later measures growth against the pre-session
+    register. Every further edit only touches `.session-edits`.
+    """
+    if _read_config(project).get("capture") is not True:
+        return
+    session = os.path.join(tl, _SESSION_MARKER)
+    if not os.path.exists(session):
+        _write_baseline(os.path.join(tl, _BASELINE_MARKER),
+                        _register_path(project)[0])
+    _touch(session)
+
+
+def _register_path(project, cfg=None):
+    """(absolute path, configured spelling) of the findings register."""
+    reg = (_read_config(project) if cfg is None else cfg).get("register")
+    if not isinstance(reg, str) or not reg:
+        reg = _DEFAULT_REGISTER
+    return (reg if os.path.isabs(reg)
+            else os.path.join(project, reg)), reg
+
+
+def _register_sha(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return "sha256:" + h.hexdigest()
+
+
+def _write_baseline(baseline_path, register_abs):
+    """Freeze what the register looked like before this session touched
+    anything. A register that does not exist yet is itself a fact worth
+    recording: any register at all later means the session recorded."""
+    import json
+    try:
+        st = os.stat(register_abs)
+        payload = {"exists": True, "size": st.st_size, "mtime": st.st_mtime,
+                   "sha256": _register_sha(register_abs)}
+    except OSError:
+        payload = {"exists": False}
+    with open(baseline_path, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh)
 
 
 #: Severity sort rank for consult; anything unknown sinks below `low`.
@@ -309,6 +390,119 @@ def refresh(project):
               file=sys.stderr)
 
 
+# --------------------------------------------------------------------------- #
+# capture — did this session's edits ever reach the register?
+# --------------------------------------------------------------------------- #
+
+
+def _clear_session(tl):
+    """Close the capture cycle: the next session starts with a fresh
+    baseline and a fresh prompt."""
+    for name in (_SESSION_MARKER, _BASELINE_MARKER, _PROMPTED_MARKER):
+        try:
+            os.remove(os.path.join(tl, name))
+        except OSError:
+            pass
+
+
+def _register_grew(tl, register_abs):
+    """Positive evidence that the register changed since the baseline.
+
+    Anything short of that proof — no register, no baseline, an unreadable
+    baseline — is False: capture then prompts, and a wrong prompt costs one
+    sentence, where a wrongly-swallowed one costs the session's memory.
+    """
+    import json
+    if not os.path.isfile(register_abs):
+        return False
+    try:
+        with open(os.path.join(tl, _BASELINE_MARKER), encoding="utf-8") as fh:
+            baseline = json.load(fh)
+    except Exception:  # noqa: BLE001 — corrupt baseline must not block
+        return False
+    if not isinstance(baseline, dict):
+        return False
+    if baseline.get("exists") is False:
+        return True  # the session created the register: it recorded
+    try:
+        st = os.stat(register_abs)
+        if (st.st_size == baseline.get("size")
+                and st.st_mtime == baseline.get("mtime")):
+            return False  # cheap prefilter: demonstrably untouched
+        return _register_sha(register_abs) != baseline.get("sha256")
+    except OSError:
+        return False
+
+
+def _register_prefix(project):
+    """The finding-id prefix the reason should show — the vault manifest's
+    when a vault exists, `RES` otherwise (the same fallback status uses)."""
+    import json
+    try:
+        with open(os.path.join(project, ".tracelink", "vault",
+                               ".tracelink-manifest.json"),
+                  encoding="utf-8") as fh:
+            man = json.load(fh)
+        prefix = (man.get("register") or {}).get("prefix") or man.get("prefix")
+        if isinstance(prefix, str) and prefix:
+            return prefix
+    except Exception:  # noqa: BLE001
+        pass
+    return "RES"
+
+
+def _capture_reason(project, register_name):
+    """An operative prompt, not an error message: it tells the agent exactly
+    what shape a finding takes and how to verify what it wrote."""
+    prefix = _register_prefix(project)
+    lint_cmd = f"tracelink lint --register {register_name}"
+    if os.path.isdir(os.path.join(project, ".tracelink", "vault")):
+        lint_cmd += " --vault .tracelink/vault"
+    return ("TraceLink capture: this session edited code but recorded "
+            f"nothing. Append durable discoveries to {register_name} as "
+            f"findings (### {prefix}-<n> heading, ### STATUS:/### SEVERITY: "
+            "lines, name the exact symbols/files). Only facts worth knowing "
+            "next session — constraints, gotchas, invariants, fixed bugs. "
+            "If nothing qualifies, append nothing and stop again. "
+            f"Then run: {lint_cmd}")
+
+
+def capture_check(project, payload_text):
+    """The Stop-block JSON for a session that recorded nothing, or "".
+
+    Every early return is a pass-through: gate closed, our own block already
+    continuing (`stop_hook_active`), no edits this session, register grown
+    (cycle closed, markers cleared), prompt already spent. Only the first
+    stop of a session that edited code and grew nothing gets the one block —
+    `{"decision": "block", "reason": ...}` printed by the caller with exit 0,
+    which is what makes a command-type Stop hook block.
+    """
+    import json
+
+    cfg = _read_config(project)
+    if cfg.get("capture") is not True:
+        return ""
+    try:
+        payload = json.loads(payload_text)
+    except Exception:  # noqa: BLE001
+        payload = None
+    if isinstance(payload, dict) and payload.get("stop_hook_active"):
+        return ""
+    tl = os.path.join(project, ".tracelink")
+    if not os.path.exists(os.path.join(tl, _SESSION_MARKER)):
+        return ""
+    register_abs, register_name = _register_path(project, cfg)
+    if _register_grew(tl, register_abs):
+        _clear_session(tl)
+        return ""
+    prompted = os.path.join(tl, _PROMPTED_MARKER)
+    if os.path.exists(prompted):
+        return ""  # one prompt per session; the agent already declined
+    _touch(prompted)
+    return json.dumps({"decision": "block",
+                       "reason": _capture_reason(project, register_name)})
+
+
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else list(argv)
     try:
@@ -327,6 +521,16 @@ def main(argv=None) -> int:
                 print(out)
         elif mode == "refresh":
             refresh(project)
+        elif mode == "capture-check":
+            # One process for the whole Stop: drain stdin first (the writer
+            # must never block on a long refresh), refresh — the original
+            # duty — then maybe block the stop. The block JSON is the ONLY
+            # thing ever printed to stdout here.
+            payload = sys.stdin.read()
+            refresh(project)
+            out = capture_check(project, payload)
+            if out:
+                print(out)
         # any other mode: a misconfigured hook must not become a blocked turn
     except Exception as exc:  # noqa: BLE001
         try:
