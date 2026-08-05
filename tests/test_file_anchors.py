@@ -689,6 +689,57 @@ class ConsultEndToEndThroughTheLinker(unittest.TestCase):
         self.assertIn("file: infra/docker/compose.yml", ctx)
 
 
+class CaptureSuggestsAnAnchorAwareLint(unittest.TestCase):
+    """Fix round 1: the lint command the capture prompt suggests must let
+    file anchors count — a freshly written infra note, linted with the
+    tool's own suggested command, must not warn prose-only. Convention
+    paths: .tracelink/symbols.json and the project root."""
+
+    def test_reason_includes_repo_and_symbols_when_available(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, ".tracelink", "vault"))
+            open(os.path.join(tmp, ".tracelink", "symbols.json"),
+                 "w").close()
+            reason = plugin_refresh._capture_reason(tmp, "FINDINGS.md")
+        self.assertIn("tracelink lint --register FINDINGS.md "
+                      "--vault .tracelink/vault "
+                      "--symbols .tracelink/symbols.json --repo .", reason)
+
+    def test_reason_omits_a_symbols_file_that_does_not_exist_yet(self):
+        """Suggesting a --symbols path lint would exit 2 on is worse than
+        omitting it; --repo costs nothing and always helps."""
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, ".tracelink", "vault"))
+            reason = plugin_refresh._capture_reason(tmp, "FINDINGS.md")
+        self.assertNotIn("--symbols", reason)
+        self.assertIn("--repo .", reason)
+
+    def test_the_suggested_command_actually_clears_an_infra_note(self):
+        """End to end: run the exact command the reason suggests, from the
+        project root, on a register whose only citation is a file."""
+        import shlex
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "infra", "docker"))
+            open(os.path.join(tmp, "infra", "docker", "compose.yml"),
+                 "w").close()
+            with open(os.path.join(tmp, "FINDINGS.md"), "w") as fh:
+                fh.write("# Findings\n\n## RES-01 — ports drift [HIGH]\n"
+                         "### STATUS: OPEN\n"
+                         "see `infra/docker/compose.yml`.\n")
+            reason = plugin_refresh._capture_reason(tmp, "FINDINGS.md")
+            cmd = shlex.split(reason.rsplit("Then run: ", 1)[1])
+            self.assertEqual(cmd[:2], ["tracelink", "lint"])
+            r = subprocess.run(
+                [sys.executable, "-c",
+                 "import sys; sys.path.insert(0, sys.argv[1]); "
+                 "sys.argv = ['tracelink-lint'] + sys.argv[2:]; "
+                 "from tracelink.lint import main; raise SystemExit(main())",
+                 os.path.join(ROOT, "src"), *cmd[2:]],
+                capture_output=True, text=True, cwd=tmp)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("prose-only", r.stdout)
+
+
 class LintTreatsResolvedPathsAsAnchors(unittest.TestCase):
     """Point 8: a resolved file anchor is RELIABLE — neither stopwords nor
     ubiquity apply to a path. An infra note citing compose.yml is memory,

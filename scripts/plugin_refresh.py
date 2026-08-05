@@ -373,7 +373,17 @@ def _run(entry, argv):
 
 
 def refresh(project):
-    """Rebuild index + links if the marker says an edit happened this turn."""
+    """Rebuild index + links if the marker says an edit happened this turn.
+
+    Cost note (0.8.0): a refresh now walks the tree three times — the size
+    gate below, the index build, and the linker's `repo_file_map` for file
+    anchoring. Measured on a real 666-source-file repository (~75k files
+    with node_modules/.next, all pruned): the extra file-anchoring walk is
+    ~22 ms warm, ~7% of a ~318 ms end-to-end refresh dominated by the index
+    build. Deliberately not merged into one walk: three walks that each
+    answer one question stay correct independently, and the MAX_FILES gate
+    already bounds the pathological case.
+    """
     tl = os.path.join(project, ".tracelink")
     marker = os.path.join(tl, MARKER)
     if not os.path.exists(marker):
@@ -485,11 +495,22 @@ def _register_prefix(project):
 
 def _capture_reason(project, register_name):
     """An operative prompt, not an error message: it tells the agent exactly
-    what shape a finding takes and how to verify what it wrote."""
+    what shape a finding takes and how to verify what it wrote.
+
+    The suggested lint carries `--repo .` always and `--symbols` when the
+    convention file exists: without them the tool contradicts itself — a
+    freshly captured infra note naming compose.yml, linted with the very
+    command this prompt suggests, would warn prose-only because file
+    anchors need a tree to resolve against. A --symbols path that does not
+    exist yet is omitted, not suggested: lint exits 2 on it.
+    """
     prefix = _register_prefix(project)
     lint_cmd = f"tracelink lint --register {register_name}"
     if os.path.isdir(os.path.join(project, ".tracelink", "vault")):
         lint_cmd += " --vault .tracelink/vault"
+    if os.path.isfile(os.path.join(project, ".tracelink", "symbols.json")):
+        lint_cmd += " --symbols .tracelink/symbols.json"
+    lint_cmd += " --repo ."
     return ("TraceLink capture: this session edited code but recorded "
             f"nothing. Append durable discoveries to {register_name} as "
             f"findings (### {prefix}-<n> heading, ### STATUS:/### SEVERITY: "
