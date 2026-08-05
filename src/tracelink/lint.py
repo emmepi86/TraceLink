@@ -13,7 +13,14 @@ rules, each one a way a finding fails its future reader:
                     promising links the linker refuses. A finding whose only
                     "identifiers" are stopwords or ubiquitous symbols is
                     prose-only too: framework vocabulary in backticks is
-                    still prose.
+                    still prose. With --repo, a file reference that resolves
+                    to exactly one file (the linker's suffix rule) is a
+                    RELIABLE anchor — stopwords and ubiquity are symbol
+                    diseases, a path has neither — so an infra note citing
+                    `infra/docker/compose.yml` is memory, not prose. A
+                    backticked path that resolves to nothing counts as
+                    unknown under the next rule; a bare unresolved one is
+                    prose and stays silent.
   unknown-symbols   with --symbols: deliberately-spelled identifiers the
                     index has never heard of. A WARNING only when the finding
                     cites NO known symbol at all — then the unknowns are the
@@ -62,7 +69,7 @@ from typing import Dict, List, Optional
 
 from .linker import (_CAMEL, _CODE_SPAN, _DEFAULT_STOP, _DOTTED, _SNAKE,
                      DEFAULT_MIN_LEN, _strip_syntax_prefixes, candidates,
-                     normalise)
+                     file_refs, normalise, repo_file_map, resolve_file_ref)
 from .splitter import (_SEVERITY_RE, _STATUS_RE, finding_pattern, severity,
                        split)
 
@@ -199,7 +206,8 @@ def vault_titles(vault: str) -> Dict[str, str]:
 
 def check_finding(fid: str, blocks: List[str], prefix: str,
                   symbols: Optional[dict],
-                  known_titles: Optional[Dict[str, str]]
+                  known_titles: Optional[Dict[str, str]],
+                  file_map: Optional[dict] = None
                   ) -> "tuple[List[dict], List[dict]]":
     """(warnings, infos) one finding earns. Order is the rules' order in
     the docstring, so the output reads the same as the documentation."""
@@ -207,6 +215,22 @@ def check_finding(fid: str, blocks: List[str], prefix: str,
     infos: List[dict] = []
     blob = "\n\n".join(blocks)
     idents = deliberate_identifiers(blob)
+
+    # File references, resolved with --repo (the linker's detection and
+    # suffix rule, imported — a private copy would drift). A unique match
+    # is a RELIABLE anchor: stopwords and ubiquity are symbol diseases, a
+    # path has neither. A backticked reference that resolves to nothing is
+    # unknown, exactly like a backticked symbol the index never heard of;
+    # a bare one is prose and stays silent. An ambiguous suffix is neither:
+    # the file exists, and the linker reports the ambiguity itself.
+    file_results = []
+    if file_map is not None:
+        file_results = [(ref, why, resolve_file_ref(ref, file_map))
+                        for ref, why in file_refs(blob)]
+    resolved_files = [m[0] for _r, _w, m in file_results if len(m) == 1]
+    unknown_paths = [ref for ref, why, m in file_results
+                     if not m and why == "inline-code"]
+    handled_refs = {ref for ref, _w, _m in file_results}
 
     # (a) prose-only: nothing the linker could connect. With an index,
     # stopwords and ubiquitous symbols do not rescue a finding — if they
@@ -228,6 +252,13 @@ def check_finding(fid: str, blocks: List[str], prefix: str,
                 for name, _ in candidates(blob, symbols, DEFAULT_MIN_LEN,
                                           _DEFAULT_STOP))
     if not linkable:
+        # A resolved file reference anchors; a backticked or ambiguous one
+        # is still a deliberate citation of something real enough that
+        # "prose-only" would be the wrong complaint — rule (b) owns the
+        # unresolved backticked case.
+        linkable = any(why == "inline-code" or matches
+                       for _r, why, matches in file_results)
+    if not linkable:
         # The advice must fit the failure. A finding that already has
         # identifiers — necessarily all stopwords or ubiquitous, or it would
         # be linkable — has followed "use backticks" to the letter; telling
@@ -247,14 +278,17 @@ def check_finding(fid: str, blocks: List[str], prefix: str,
     # or config keys (the benchmark's 9/10), so they inform without
     # gating. Stopwords and ubiquitous symbols are in the index, so they
     # are never unknown themselves — they just cannot vouch for others.
-    if symbols is not None:
-        unknown = sorted(
+    if symbols is not None or unknown_paths:
+        unknown_idents = [] if symbols is None else [
             token for token in idents
-            if (tail := token.rsplit(".", 1)[-1]) not in symbols
-            and tail not in _DEFAULT_STOP)
+            if token not in handled_refs
+            and (tail := token.rsplit(".", 1)[-1]) not in symbols
+            and tail not in _DEFAULT_STOP]
+        unknown = sorted(set(unknown_idents) | set(unknown_paths))
         if unknown:
-            cites_known = any(_is_anchor(token, symbols)
-                              for token in idents)
+            cites_known = bool(resolved_files) or (
+                symbols is not None
+                and any(_is_anchor(token, symbols) for token in idents))
             if cites_known:
                 infos.extend(
                     {"id": fid, "code": "unknown-symbols",
@@ -310,6 +344,11 @@ def main() -> int:
                          "--new-only")
     ap.add_argument("--symbols",
                     help="symbol index, to verify that cited symbols exist")
+    ap.add_argument("--repo",
+                    help="repository to resolve file references against: a "
+                         "citation that resolves to exactly one file is a "
+                         "reliable anchor (an infra note naming compose.yml "
+                         "is not prose)")
     ap.add_argument("--prefix", default=None,
                     help="finding id prefix (default: the vault manifest's, "
                          "else RES)")
@@ -344,6 +383,14 @@ def main() -> int:
 
     known_titles = vault_titles(args.vault) if args.vault else None
 
+    # The same map the linker resolves against, with the same exclusions —
+    # here the register is the one being linted, so its basename is known
+    # directly instead of through a manifest.
+    file_map = None
+    if args.repo:
+        file_map = repo_file_map(args.repo, args.vault,
+                                 os.path.basename(args.register))
+
     already_split = set()
     if args.new_only:
         already_split = {os.path.splitext(g)[0]
@@ -356,7 +403,7 @@ def main() -> int:
             continue
         checked += 1
         warns, notes = check_finding(fid, blocks, prefix, symbols,
-                                     known_titles)
+                                     known_titles, file_map)
         warnings += warns
         infos += notes
 

@@ -15,7 +15,6 @@ never anchor targets, even when cited textually.
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -532,6 +531,118 @@ class ConsultEndToEndThroughTheLinker(unittest.TestCase):
         ctx = json.loads(out)["hookSpecificOutput"]["additionalContext"]
         self.assertIn("RES-01", ctx)
         self.assertIn("file: infra/docker/compose.yml", ctx)
+
+
+class LintTreatsResolvedPathsAsAnchors(unittest.TestCase):
+    """Point 8: a resolved file anchor is RELIABLE — neither stopwords nor
+    ubiquity apply to a path. An infra note citing compose.yml is memory,
+    not prose."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.base = self._tmp.name
+        self.register = os.path.join(self.base, "FINDINGS.md")
+        self.repo = os.path.join(self.base, "repo")
+        os.makedirs(os.path.join(self.repo, "infra", "docker"))
+        with open(os.path.join(self.repo, "infra", "docker",
+                               "compose.yml"), "w") as fh:
+            fh.write("services: {}\n")
+
+    def write_register(self, body):
+        with open(self.register, "w") as fh:
+            fh.write("# Findings\n\n## RES-01 — infra note [HIGH]\n"
+                     "### STATUS: OPEN\n" + body + "\n")
+
+    def lint(self, *extra):
+        import contextlib
+        import io
+        from unittest import mock
+        from tracelink import lint as lint_mod
+        out = io.StringIO()
+        argv = ["tracelink-lint", "--register", self.register,
+                "--format", "json", *extra]
+        with mock.patch.object(sys, "argv", argv), \
+                contextlib.redirect_stdout(out):
+            rc = lint_mod.main()
+        return rc, json.loads(out.getvalue())
+
+    def codes(self, payload):
+        return [w["code"] for w in payload["warnings"]]
+
+    def test_an_infra_only_note_with_a_resolved_path_is_not_prose(self):
+        self.write_register("the stage stack breaks when "
+                            "`infra/docker/compose.yml` changes ports.")
+        rc, payload = self.lint("--repo", self.repo)
+        self.assertEqual(self.codes(payload), [], payload)
+        self.assertEqual(rc, 0)
+
+    def test_without_repo_the_same_note_still_warns_prose_only(self):
+        """Resolution needs a tree to resolve against: no --repo, no
+        file anchors — the 0.7.1 behaviour is untouched."""
+        self.write_register("the stage stack breaks when "
+                            "`infra/docker/compose.yml` changes ports.")
+        rc, payload = self.lint()
+        self.assertEqual(self.codes(payload), ["prose-only"])
+        self.assertEqual(rc, 1)
+
+    def test_a_backticked_path_that_resolves_nothing_is_unknown(self):
+        self.write_register("see `infra/missing.yml` for the ports.")
+        rc, payload = self.lint("--repo", self.repo)
+        self.assertEqual(self.codes(payload), ["unknown-symbols"])
+        self.assertIn("infra/missing.yml", payload["warnings"][0]["detail"])
+        self.assertEqual(rc, 1)
+
+    def test_an_unresolved_path_beside_a_resolved_one_demotes_to_info(self):
+        self.write_register("`infra/docker/compose.yml` drives the ports; "
+                            "`infra/missing.yml` was removed.")
+        rc, payload = self.lint("--repo", self.repo)
+        self.assertEqual(self.codes(payload), [])
+        self.assertEqual([i["code"] for i in payload["infos"]],
+                         ["unknown-symbols"])
+        self.assertEqual(rc, 0)
+
+    def test_a_bare_unresolved_path_is_prose_not_a_citation(self):
+        self.write_register("someone should look at infra/missing.yml "
+                            "one of these days.")
+        rc, payload = self.lint("--repo", self.repo)
+        self.assertEqual(self.codes(payload), ["prose-only"])
+
+    def test_an_ambiguous_path_is_neither_anchor_nor_unknown(self):
+        """The file exists — twice. The linker reports the ambiguity; lint
+        neither calls the citation unknown nor the finding prose."""
+        with open(os.path.join(self.repo, "infra", "compose.yml"),
+                  "w") as fh:
+            fh.write("services: {}\n")
+        self.write_register("see `compose.yml`.")
+        rc, payload = self.lint("--repo", self.repo)
+        self.assertEqual(self.codes(payload), [], payload)
+        self.assertEqual(payload["infos"], [])
+        self.assertEqual(rc, 0)
+
+    def test_a_file_anchor_vouches_for_unknown_symbols(self):
+        symbols = os.path.join(self.base, "symbols.json")
+        with open(symbols, "w") as fh:
+            json.dump({"symbols": {"known_helper": [
+                {"path": "src/app.py", "line": 1, "kind": "py",
+                 "qualified_name": None}]}}, fh)
+        self.write_register("`frobnicate_widget` misreads "
+                            "`infra/docker/compose.yml`.")
+        rc, payload = self.lint("--repo", self.repo, "--symbols", symbols)
+        self.assertEqual(self.codes(payload), [])
+        self.assertEqual([i["code"] for i in payload["infos"]],
+                         ["unknown-symbols"])
+        self.assertEqual(rc, 0)
+
+    def test_the_register_is_never_its_own_anchor(self):
+        """The register basename is excluded from resolution: a finding
+        citing FINDINGS.md has cited the tool, not the code."""
+        with open(os.path.join(self.repo, "FINDINGS.md"), "w") as fh:
+            fh.write("# a register in the repo\n")
+        self.write_register("see `FINDINGS.md`.")
+        rc, payload = self.lint("--repo", self.repo)
+        self.assertEqual(self.codes(payload), ["unknown-symbols"])
+        self.assertEqual(rc, 1)
 
 
 if __name__ == "__main__":
