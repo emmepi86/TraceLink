@@ -10,6 +10,8 @@ same: relink, because a stale link is a wrong answer delivered quickly.
     python3 -m unittest discover tests -v
 """
 
+import contextlib
+import io
 import json
 import os
 import re
@@ -17,8 +19,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "src"))
 STATE = ".tracelink-link-state.json"
 
 
@@ -264,10 +268,11 @@ class TheStateIsRewrittenOnEverySuccessfulRun(_VaultCase):
                          json.loads(content_before))
 
     def test_the_state_records_the_symbols_fingerprint(self):
+        from tracelink import linker
         self.standard_vault()
         self.link()
         state = json.loads(self.read(STATE))
-        self.assertEqual(state["schema_version"], 1)
+        self.assertEqual(state["schema_version"], linker._STATE_SCHEMA)
         self.assertTrue(state["symbols_fingerprint"].startswith("sha256:"))
         self.assertEqual(sorted(state["notes"]), ["RES-01.md", "RES-02.md"])
 
@@ -280,6 +285,63 @@ class TheStateFileIsNotANote(_VaultCase):
         self.assertEqual(_stat(r2, "notes_scanned"), 2)
         self.assertNotIn("without tracelink_schema", r2.stdout + r2.stderr)
         self.assertNotIn("link-state", self.read("CODE-INDEX.md"))
+
+
+class SkippingActuallySkipsTheWork(_VaultCase):
+    """Correctness first — but a "skipped" note that is disambiguated all
+    over again has not been skipped, it has been relinked without the write.
+    The state caches each link's resolved location, whose invariance is
+    already proven by `symbol_locations`, so the skip path renders the block
+    from the cache and compares bytes: no candidate scan, no disambiguation.
+    Any mismatch still falls back to a full recompute of that note."""
+
+    def _main(self, *extra):
+        from tracelink import linker
+        argv = ["link", "--vault", self.vault, "--symbols", self.syms, *extra]
+        out = io.StringIO()
+        with mock.patch.object(sys, "argv", argv), \
+                contextlib.redirect_stdout(out):
+            rc = linker.main()
+        return rc, out.getvalue()
+
+    def _spies(self):
+        from tracelink import linker
+        dis = mock.patch.object(linker, "disambiguate",
+                                side_effect=linker.disambiguate)
+        cand = mock.patch.object(linker, "candidates",
+                                 side_effect=linker.candidates)
+        return dis, cand
+
+    def test_a_skipped_note_is_neither_scanned_nor_disambiguated(self):
+        self.standard_vault()
+        rc, out = self._main()
+        self.assertEqual(rc, 0, out)
+        dis, cand = self._spies()
+        with dis as dis_spy, cand as cand_spy:
+            rc, out = self._main()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("notes_skipped_unchanged: 2", out)
+        self.assertEqual(cand_spy.call_count, 0,
+                         "skipped notes were candidate-scanned again")
+        self.assertEqual(dis_spy.call_count, 0,
+                         "skipped notes were disambiguated again")
+
+    def test_a_tampered_block_forces_the_recompute_and_the_repair(self):
+        self.standard_vault()
+        rc, out = self._main()
+        self.assertEqual(rc, 0, out)
+        path = os.path.join(self.vault, "RES-01.md")
+        edited = self.read("RES-01.md").replace("src/parser.py:L4",
+                                                "src/parser.py:L999")
+        open(path, "w").write(edited)
+        dis, _cand = self._spies()
+        with dis as dis_spy:
+            rc, out = self._main()
+        self.assertEqual(rc, 0, out)
+        self.assertGreater(dis_spy.call_count, 0,
+                           "the mismatch did not fall back to a recompute")
+        self.assertIn("src/parser.py:L4", self.read("RES-01.md"))
+        self.assertNotIn("L999", self.read("RES-01.md"))
 
 
 class SkippingNeverHidesAWarning(_VaultCase):

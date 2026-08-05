@@ -14,15 +14,23 @@ note says so.
 
 Incremental relinking: a sidecar `{vault}/.tracelink-link-state.json` records,
 per note, a hash of its authored text (plus its frontmatter overrides, which
-`matchable()` strips but which change the outcome) and the symbols its managed
-block lists. A later run skips a note only when it can PROVE the outcome would
-be identical: same authored text, same options, and none of the symbols the
-note links or mentions has been added, removed, or moved. Anything the proof
-does not cover — a corrupt or missing state, a different schema, different
-options, an ambiguous reference, a managed block that does not match — falls
-back to a full relink, because a stale link is a wrong answer delivered
-quickly. `--check` ignores the state entirely (it verifies, so it must look)
-and never writes it; `--full` ignores it and rebuilds it.
+`matchable()` strips but which change the outcome) and the links its managed
+block carries — each symbol with its resolved location. A later run skips a
+note only when it can PROVE the outcome would be identical: same authored
+text, same options, none of the symbols the note links or mentions added,
+removed, or moved, and a managed block that matches, byte for byte, the one
+rendered from the cached links. Under that proof the skip does no candidate
+scanning and no disambiguation at all. Anything the proof does not cover — a
+corrupt or missing state, a different schema, different options, an ambiguous
+reference, a block that does not match — falls back to a full relink of the
+note, because a stale link is a wrong answer delivered quickly. `--check`
+ignores the state entirely (it verifies, so it must look) and never writes
+it; `--full` ignores it and rebuilds it. The state is written by every
+non-check run whose linking completed — deliberately including one that then
+exits 1 under `--require-linked`: that exit is a CI gate on the result, not
+a failure of the linking, and the state describes note files that were
+really written. A freshness refusal happens before any linking and writes
+nothing.
 
 The JSON report carries the additive key `linking.notes_skipped_unchanged`;
 the text report prints the same figure. `notes_scanned` remains the total
@@ -377,7 +385,10 @@ def write_atomic(path: str, content: str) -> None:
 # prove is relinked in full. Naming follows `.tracelink-manifest.json`.
 
 _STATE_FILE = ".tracelink-link-state.json"
-_STATE_SCHEMA = 1
+#: v2 caches each link's resolved location alongside its name, so the skip
+#: path renders the managed block from the state instead of disambiguating
+#: again. A v1 state — or any other version — is discarded whole.
+_STATE_SCHEMA = 2
 
 
 def _sha(data) -> str:
@@ -442,29 +453,32 @@ def load_state(path: str) -> Optional[dict]:
         if not isinstance(linked, list) or not all(
                 isinstance(s, str) for s in linked):
             return None
+        locations = entry.get("locations")
+        if not isinstance(locations, list) or len(locations) != len(linked):
+            return None
+        for loc in locations:
+            if not isinstance(loc, dict) or not isinstance(loc.get("path"), str):
+                return None
+            if not isinstance(loc.get("line"), (str, int, type(None))):
+                return None
     return raw
 
 
-def replay_links(names: list, symbols: dict, body: str, overrides: dict):
-    """Re-derive the links a skipped note carries, or None to force a relink.
+def cached_links(entry: dict) -> list:
+    """The links a skipped note carries, straight from the state.
 
-    The skip decision guarantees the inputs are the ones the links were made
-    from: same body, same overrides, and unchanged locations for every symbol
-    the note touches. Disambiguation is deterministic over those inputs, so
-    replaying it must reproduce the previous result — and if it cannot (a name
-    gone from the index, an ambiguity that was not there), the proof has
-    failed and the caller relinks in full rather than guessing.
+    No disambiguation happens here — that is the point of caching the
+    resolved location next to each name. The skip decision has already proven
+    the inputs unchanged: same authored text and overrides (the content
+    hash), same location list for every symbol the note links or mentions
+    (`symbol_locations` through the changed-names check). Under that proof
+    the cached resolution IS the current resolution. The caller still renders
+    the managed block from these links and compares it byte for byte with
+    the disk, so a state that lies — or a block edited by hand — falls back
+    to a full recompute of the note rather than being believed.
     """
-    links = []
-    for name in names:
-        locations = symbols.get(name)
-        if not locations:
-            return None
-        loc, how = disambiguate(name, locations, body, overrides)
-        if loc is None:
-            return None
-        links.append((name, loc, f"cached/{how}"))
-    return links
+    return [(name, {"path": loc["path"], "line": loc.get("line")}, "cached")
+            for name, loc in zip(entry["linked"], entry["locations"])]
 
 
 # --------------------------------------------------------------------------- #
@@ -739,8 +753,8 @@ def main() -> int:
                 bool(changed_names.intersection(entry["linked"]))
                 or (mention_pat is not None and mention_pat.search(body)))
             if not affected:
-                cached = replay_links(entry["linked"], symbols, body, overrides)
-                if cached is not None and apply_block(text, cached, symbols) != text:
+                cached = cached_links(entry)
+                if apply_block(text, cached, symbols) != text:
                     cached = None  # the block on disk is not what was promised
 
         note_ambiguous = []
@@ -758,8 +772,11 @@ def main() -> int:
             links = links[: args.max_links]
         ambiguous += len(note_ambiguous)
         if not note_ambiguous:
-            new_state_notes[name] = {"content_hash": note_hash,
-                                     "linked": [s for s, _l, _w in links]}
+            new_state_notes[name] = {
+                "content_hash": note_hash,
+                "linked": [s for s, _l, _w in links],
+                "locations": [{"path": l["path"], "line": l.get("line")}
+                              for _s, l, _w in links]}
         if not links:
             # Distinguish the causes rather than reporting a single count.
             known = [w for w in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", body)
