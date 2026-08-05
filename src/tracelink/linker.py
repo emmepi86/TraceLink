@@ -23,9 +23,10 @@ ambiguous and never guessed, a zero match is silence. File anchors do NOT
 count toward the per-file hotspot rollup, which counts (note, symbol) links:
 a file named as a thing is not a symbol located in a file, and 0.8.0 keeps
 the two semantics apart. The tool's own
-artifacts — the register the vault manifest names, the vault itself,
-`.tracelink/**`, INDEX.md and CODE-INDEX.md — are never anchor targets, even
-when cited textually: the tool must not link to its own output.
+artifacts — the register's path, the vault subtree (INDEX, CODE-INDEX and
+sidecars live there) and `.tracelink/**` — are never anchor targets, even
+when cited textually: the tool must not link to its own output. Its own
+output ONLY: a project's `docs/INDEX.md` is a legitimate anchor.
 
 Incremental relinking: a sidecar `{vault}/.tracelink-link-state.json` records,
 per note, a hash of its authored text (plus its frontmatter overrides, which
@@ -275,18 +276,20 @@ def repo_file_map(repo: str, vault: Optional[str] = None,
     """basename -> sorted relative paths of every file a reference may
     anchor to. One full walk per run — the same price the indexer pays.
 
-    Exclusions, because the tool must never link to its own output:
-    the scan backend's skip dirs and every hidden directory (which covers
-    `.tracelink/**`), the vault subtree, INDEX.md and CODE-INDEX.md by name,
-    the link-state sidecar, and the register by the basename the manifest
-    records — a register elsewhere in the tree is still a register.
+    Exclusions, because the tool must never link to its own output — and
+    ONLY its own output: the scan backend's skip dirs and every hidden
+    directory (which covers `.tracelink/**` and everything in it, INDEX,
+    CODE-INDEX, sidecar, manifest), the vault subtree wherever it lives,
+    and the register as a repo-relative PATH. By path, not by basename: a
+    `docs/INDEX.md` — or a `docs/FINDINGS.md` that is not the register —
+    is a legitimate anchor target. The linker learns the register from the
+    vault manifest, which records only a basename, so it excludes the
+    repo-root file of that name — the overwhelming convention; lint knows
+    the real path from --register and passes it exactly.
     """
     root = os.path.realpath(repo)
     vault_real = os.path.realpath(vault) if vault else None
-    exclude_names = {"INDEX.md", "CODE-INDEX.md", STATE_FILE,
-                     ".tracelink-manifest.json"}
-    if register:
-        exclude_names.add(register)
+    register_rel = register.replace(os.sep, "/") if register else None
     out: Dict[str, List[str]] = {}
     for dirpath, dirs, files in os.walk(root):
         dirs[:] = [d for d in dirs
@@ -298,10 +301,10 @@ def repo_file_map(repo: str, vault: Optional[str] = None,
                 dirs[:] = []
                 continue
         for fn in files:
-            if fn in exclude_names:
-                continue
             rel = os.path.relpath(os.path.join(dirpath, fn),
                                   root).replace(os.sep, "/")
+            if rel == register_rel:
+                continue
             out.setdefault(fn, []).append(rel)
     for paths in out.values():
         paths.sort()

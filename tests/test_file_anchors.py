@@ -251,6 +251,17 @@ class TheToolNeverAnchorsToItself(_AnchorCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(self.block("RES-01.md"), "")
 
+    def test_a_projects_own_docs_index_can_anchor(self):
+        """Fix round 1: the exclusion is the tool's OWN artifacts — the
+        register path, the vault, .tracelink/** — not any file that happens
+        to be called INDEX.md. A project's docs/INDEX.md is a legitimate
+        anchor target."""
+        self.repo_file("docs/INDEX.md", "# project docs\n")
+        self.note("RES-01", "the nav is generated from `docs/INDEX.md`.")
+        r = self.link()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("- docs/INDEX.md", self.block("RES-01.md"))
+
     def test_the_managed_block_is_never_reread_as_a_citation(self):
         """A file line written by the last run must not keep the anchor
         alive after the prose stops citing the file."""
@@ -872,14 +883,25 @@ class LintTreatsResolvedPathsAsAnchors(unittest.TestCase):
         self.assertEqual(rc, 1)
 
     def test_the_register_is_never_its_own_anchor(self):
-        """The register basename is excluded from resolution: a finding
+        """The linted register PATH is excluded from resolution: a finding
         citing FINDINGS.md has cited the tool, not the code."""
-        with open(os.path.join(self.repo, "FINDINGS.md"), "w") as fh:
-            fh.write("# a register in the repo\n")
+        self.register = os.path.join(self.repo, "FINDINGS.md")
         self.write_register("see `FINDINGS.md`.")
         rc, payload = self.lint("--repo", self.repo)
         self.assertEqual(self.codes(payload), ["unknown-symbols"])
         self.assertEqual(rc, 1)
+
+    def test_a_findings_file_that_is_not_the_register_can_anchor(self):
+        """Fix round 1: the exclusion is by path, not by basename — a
+        different file that shares the register's name is just a file."""
+        os.makedirs(os.path.join(self.repo, "docs"))
+        with open(os.path.join(self.repo, "docs", "FINDINGS.md"),
+                  "w") as fh:
+            fh.write("# somebody else's findings\n")
+        self.write_register("see `docs/FINDINGS.md` for the history.")
+        rc, payload = self.lint("--repo", self.repo)
+        self.assertEqual(self.codes(payload), [], payload)
+        self.assertEqual(rc, 0)
 
 
 if __name__ == "__main__":

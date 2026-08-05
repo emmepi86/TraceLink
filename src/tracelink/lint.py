@@ -401,12 +401,16 @@ def main() -> int:
     known_titles = vault_titles(args.vault) if args.vault else None
 
     # The same map the linker resolves against, with the same exclusions —
-    # here the register is the one being linted, so its basename is known
-    # directly instead of through a manifest.
+    # here the register being linted is known by its real PATH, so exactly
+    # that file is excluded: a docs/FINDINGS.md that is not the register is
+    # just a file. A register outside the repo resolves to a `..` relative
+    # path, which matches nothing — correctly, it is not in the tree.
     file_map = None
     if args.repo:
-        file_map = repo_file_map(args.repo, args.vault,
-                                 os.path.basename(args.register))
+        register_rel = os.path.relpath(
+            os.path.realpath(args.register),
+            os.path.realpath(args.repo)).replace(os.sep, "/")
+        file_map = repo_file_map(args.repo, args.vault, register_rel)
 
     already_split = set()
     if args.new_only:
