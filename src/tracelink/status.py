@@ -276,8 +276,12 @@ def _links(vault: str, symbols_path: str, notes: dict, vault_found: bool):
         problems.append(f"link-state-stale: {unverified} note(s) the state "
                         f"cannot vouch for (run link)")
     if matches and not unverified:
+        # A file anchor is a link: a note that anchored only files (an
+        # infra note naming compose.yml, no symbol at all) linked
+        # something, and the linker does not report it unlinked either.
         unlinked = sum(1 for n, e in state["notes"].items()
-                       if n in notes and not e["linked"])
+                       if n in notes and not e["linked"]
+                       and not e.get("files"))
         out["unlinked_count"] = unlinked
         if unlinked:
             problems.append(f"unlinked-notes: {unlinked} "

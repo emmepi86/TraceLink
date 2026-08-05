@@ -12,14 +12,31 @@ The matching is LEXICAL. It finds identifiers a note actually spells out. It
 will not know that "the enrichment channel" means `enrich_records()` unless the
 note says so.
 
+Notes anchor to FILES too, not only symbols. A file reference is a token with
+an extension — in backticks always (backticks are a decision), bare in prose
+only when it carries at least one `/` (a bare `config.yml` is too weak). It
+resolves by path SUFFIX against the real tree under `--repo`, whole components
+only, exactly the rule `_dotted_matches_path` applies to dotted names: a
+unique match becomes an anchor (`- infra/docker/compose.yml` in the managed
+block, a `## Files` table in CODE-INDEX.md), a multiple match is reported
+ambiguous and never guessed, a zero match is silence. File anchors do NOT
+count toward the per-file hotspot rollup, which counts (note, symbol) links:
+a file named as a thing is not a symbol located in a file, and 0.8.0 keeps
+the two semantics apart. The tool's own
+artifacts — the register the vault manifest names, the vault itself,
+`.tracelink/**`, INDEX.md and CODE-INDEX.md — are never anchor targets, even
+when cited textually: the tool must not link to its own output.
+
 Incremental relinking: a sidecar `{vault}/.tracelink-link-state.json` records,
 per note, a hash of its authored text (plus its frontmatter overrides, which
 `matchable()` strips but which change the outcome) and the links its managed
-block carries — each symbol with its resolved location. A later run skips a
-note only when it can PROVE the outcome would be identical: same authored
-text, same options, none of the symbols the note links or mentions added,
-removed, or moved, and a managed block that matches, byte for byte, the one
-rendered from the cached links. Under that proof the skip does no candidate
+block carries — each symbol with its resolved location, and each file anchor
+with a fingerprint of the full resolution of the note's file references. A
+later run skips a note only when it can PROVE the outcome would be identical:
+same authored text, same options, none of the symbols the note links or
+mentions added, removed, or moved, the same file-reference resolution against
+the tree as it is NOW, and a managed block that matches, byte for byte, the
+one rendered from the cached links. Under that proof the skip does no candidate
 scanning and no disambiguation at all. Anything the proof does not cover — a
 corrupt or missing state, a different schema, different options, an ambiguous
 reference, a block that does not match — falls back to a full relink of the
@@ -53,6 +70,14 @@ import os
 import re
 import sys
 from typing import Dict, List, Optional, Tuple
+
+#: The scan backend's directory excludes, imported rather than copied: a
+#: private duplicate would drift, and file anchors must see exactly the tree
+#: the symbol index sees.
+try:
+    from .symbol_index import _SKIP_DIRS as _REPO_SKIP_DIRS
+except ImportError:  # running as a loose script
+    from symbol_index import _SKIP_DIRS as _REPO_SKIP_DIRS  # type: ignore
 
 #: Names too common to be evidence of anything. A note mentioning "data" should
 #: not acquire a link to every table called `data`. Extend with --stopwords.
@@ -183,6 +208,109 @@ def candidates(text: str, symbols: Dict[str, str], min_len: int,
             ranked[m] = "identifier"
     order = {"inline-code": 0, "identifier": 1}
     return sorted(ranked.items(), key=lambda kv: (order[kv[1]], kv[0]))
+
+
+# --------------------------------------------------------------------------- #
+# file anchors — notes that name a file, not a symbol
+# --------------------------------------------------------------------------- #
+
+#: A path-shaped token whose LAST segment carries an extension: a word
+#: character, a dot, then the extension. `infra/docker/compose.yml`,
+#: `deploy-stage.sh`, `.env.example` — but not a bare dotfile like `.env`,
+#: which has no extension to speak of.
+_FILE_TOKEN = re.compile(r"(?:[\w.\-]+/)*[\w.\-]*\w\.[A-Za-z0-9][\w\-]*")
+#: The same token bare in prose, requiring at least one `/`. The lookbehind
+#: refuses a match that starts mid-token — which also keeps URLs out, since
+#: `host.com/x.yml` always has a `.` or `/` right before any candidate start.
+_FILE_BARE = re.compile(
+    r"(?<![\w./\\-])((?:[\w.\-]+/)+[\w.\-]*\w\.[A-Za-z0-9][\w\-]*)")
+
+
+def _norm_ref(ref: str) -> str:
+    """`./compose.yml` is spelling, not location."""
+    while ref.startswith("./"):
+        ref = ref[2:]
+    return ref
+
+
+def file_refs(text: str) -> List[Tuple[str, str]]:
+    """File references the author spelled out, with how deliberately.
+
+    In backticks any extension-bearing token counts — backticks are a
+    decision. Bare in prose the bar is higher: at least one `/`, because a
+    bare `config.yml` names a kind of file, not a file. The real filter is
+    neither: it is existence in the repository, applied by resolution.
+    """
+    refs: Dict[str, str] = {}
+    for span in _CODE_SPAN.findall(text):
+        token = span.strip()
+        if _FILE_TOKEN.fullmatch(token):
+            refs.setdefault(_norm_ref(token), "inline-code")
+    for m in _FILE_BARE.findall(text):
+        refs.setdefault(_norm_ref(m), "bare")
+    return list(refs.items())
+
+
+def _manifest_register(vault: str) -> Optional[str]:
+    """The register basename the vault manifest records, or None."""
+    try:
+        with open(os.path.join(vault, ".tracelink-manifest.json"),
+                  encoding="utf-8") as fh:
+            man = json.load(fh)
+        reg = ((man.get("register") or {}).get("source")
+               or man.get("generated_from"))
+        return os.path.basename(reg) if isinstance(reg, str) and reg else None
+    except Exception:  # noqa: BLE001 — no manifest shape may break linking
+        return None
+
+
+def repo_file_map(repo: str, vault: Optional[str] = None,
+                  register: Optional[str] = None) -> Dict[str, List[str]]:
+    """basename -> sorted relative paths of every file a reference may
+    anchor to. One full walk per run — the same price the indexer pays.
+
+    Exclusions, because the tool must never link to its own output:
+    the scan backend's skip dirs and every hidden directory (which covers
+    `.tracelink/**`), the vault subtree, INDEX.md and CODE-INDEX.md by name,
+    the link-state sidecar, and the register by the basename the manifest
+    records — a register elsewhere in the tree is still a register.
+    """
+    root = os.path.realpath(repo)
+    vault_real = os.path.realpath(vault) if vault else None
+    exclude_names = {"INDEX.md", "CODE-INDEX.md", STATE_FILE,
+                     ".tracelink-manifest.json"}
+    if register:
+        exclude_names.add(register)
+    out: Dict[str, List[str]] = {}
+    for dirpath, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs
+                   if d not in _REPO_SKIP_DIRS and not d.startswith(".")]
+        if vault_real is not None:
+            real_dir = os.path.realpath(dirpath)
+            if real_dir == vault_real or real_dir.startswith(
+                    vault_real + os.sep):
+                dirs[:] = []
+                continue
+        for fn in files:
+            if fn in exclude_names:
+                continue
+            rel = os.path.relpath(os.path.join(dirpath, fn),
+                                  root).replace(os.sep, "/")
+            out.setdefault(fn, []).append(rel)
+    for paths in out.values():
+        paths.sort()
+    return out
+
+
+def resolve_file_ref(ref: str,
+                     files_by_name: Dict[str, List[str]]) -> List[str]:
+    """Every repo path whose final components equal the reference's — whole
+    segments only, so `compose.yml` never matches `compose.prod.yml`, the
+    same rule `_dotted_matches_path` applies. Case-sensitive: near enough
+    is a guess."""
+    parts = ref.split("/")
+    return [p for p in files_by_name.get(parts[-1], ())
+            if p.split("/")[-len(parts):] == parts]
 
 
 
@@ -354,22 +482,26 @@ def read_overrides(text: str) -> dict:
     return out
 
 
-def render_block(links, symbols) -> str:
-    body = "\n".join(f"- `{name}` — {fmt(loc)}" for name, loc, _why in links)
+def render_block(links, symbols, files=()) -> str:
+    """Symbols first, exactly as before; file anchors after, as pure paths —
+    no backticks, no line, because the anchor is the file itself."""
+    rows = [f"- `{name}` — {fmt(loc)}" for name, loc, _why in links]
+    rows += [f"- {path}" for path in files]
+    body = "\n".join(rows)
     return f"{_BLOCK_START}\n{_FORWARD_HEADING}\n\n{body}\n{_BLOCK_END}\n"
 
 
 def apply_block(text: str, links: List[Tuple[str, str]],
-                symbols: Dict[str, str]) -> str:
+                symbols: Dict[str, str], files=()) -> str:
     """Always rebuilt from the current match; removed when nothing matches.
 
     The previous implementation only ran when there were hits, so a note whose
     last symbol left the prose kept its stale block indefinitely.
     """
     stripped = strip_managed(text)
-    if not links:
+    if not links and not files:
         return stripped
-    block = render_block(links, symbols)
+    block = render_block(links, symbols, files)
     if stripped.startswith("---"):
         end = stripped.find("\n---", 3)
         cut = stripped.find("\n", end + 1) + 1 if end != -1 else 0
@@ -397,8 +529,11 @@ STATE_FILE = ".tracelink-link-state.json"
 _STATE_FILE = STATE_FILE  # private alias kept for internal compatibility
 #: v2 caches each link's resolved location alongside its name, so the skip
 #: path renders the managed block from the state instead of disambiguating
-#: again. A v1 state — or any other version — is discarded whole.
-_STATE_SCHEMA = 2
+#: again. v3 adds, per note, the `files` array of resolved file anchors and
+#: a `files_fingerprint` over the full resolution of the note's file
+#: references. A v1 or v2 state — or any other version — is discarded whole:
+#: the schema-mismatch path IS the migration, one full relink.
+_STATE_SCHEMA = 3
 
 
 def sha256_text(data) -> str:
@@ -433,6 +568,23 @@ def location_fingerprint(locations: list) -> str:
     one line changes this hash, and the notes that link it get relinked so
     their `path:Lline` stays true."""
     return _sha(json.dumps(locations, sort_keys=True, default=str))
+
+
+def files_fingerprint(outcomes: list) -> str:
+    """Hash of one note's file-reference resolutions: every reference with
+    the FULL list of paths it matches, not just the unique winners.
+
+    The full list matters: a reference that matched nothing and now matches
+    two files gains an ambiguity warning without gaining an anchor, and a
+    fingerprint over anchors alone would let the skip hide that warning.
+
+    This is recomputed on EVERY run for every note, cached or not — the
+    repository tree is an input the content hash cannot see. The cost is one
+    regex pass over the note body plus dict lookups against a basename map
+    built once per run; correctness over a changing tree is worth exactly
+    that much.
+    """
+    return _sha(json.dumps(outcomes))
 
 
 def load_state(path: str) -> Optional[dict]:
@@ -477,6 +629,12 @@ def load_state(path: str) -> Optional[dict]:
                 return None
             if not isinstance(loc.get("line"), (str, int, type(None))):
                 return None
+        files = entry.get("files")
+        if not isinstance(files, list) or not all(
+                isinstance(p, str) for p in files):
+            return None
+        if not isinstance(entry.get("files_fingerprint"), str):
+            return None
     return raw
 
 
@@ -731,11 +889,26 @@ def main() -> int:
         print(f"no notes in {args.vault}")
         return 1
 
+    # File anchoring resolves against the real tree, so the map is built once
+    # per run, with the tool's own artifacts excluded at the source.
+    files_by_name = repo_file_map(args.repo, args.vault,
+                                  _manifest_register(args.vault))
+
     backward: Dict[str, List[str]] = collections.defaultdict(list)
     # (note, symbol) pairs per file, from links actually written. The rollup
     # answers "which file do the notes keep pointing at" — counting ambiguous
     # candidates here would count links the linker refused to make.
     file_rollup: Dict[str, set] = collections.defaultdict(set)
+    # File anchors actually written, per anchored file. Feeds the `## Files`
+    # table of CODE-INDEX and NOTHING else: file anchors deliberately do not
+    # count toward the per-file hotspot rollup above, which counts
+    # (note, symbol) links — a file named as a thing is not a symbol located
+    # in a file, and 0.8.0 does not mix the two semantics.
+    file_notes: Dict[str, set] = collections.defaultdict(set)
+    # File references that matched more than one path, with their candidates:
+    # reported in Ambiguous references next to the symbols, never guessed.
+    ambiguous_files: Dict[str, List[str]] = collections.defaultdict(list)
+    ambiguous_file_candidates: Dict[str, List[str]] = {}
     # Symbols a note referenced but could not be linked to one place. Kept per
     # symbol so the inverse index can say "referenced, ambiguous" instead of
     # dropping the reference entirely — a note asking about `row_fingerprint`
@@ -749,7 +922,7 @@ def main() -> int:
     # ambiguous note is a warning, and warnings are re-earned, not cached.
     new_state_notes: Dict[str, dict] = {}
     scanned = with_matches = modified = total_links = ambiguous = 0
-    skipped_unchanged = 0
+    files_linked = skipped_unchanged = 0
 
     for name in notes:
         path = os.path.join(args.vault, name)
@@ -758,6 +931,15 @@ def main() -> int:
         body = matchable(text)
         overrides = read_overrides(text)
         note_hash = note_fingerprint(body, overrides)
+
+        # File references and their resolution, computed for EVERY note —
+        # even one about to be skipped, because the repository tree is an
+        # input the content hash cannot see. See files_fingerprint for the
+        # cost accounting.
+        refs = file_refs(body)
+        outcomes = [(ref, resolve_file_ref(ref, files_by_name))
+                    for ref, _why in refs]
+        files_fp = files_fingerprint(outcomes)
 
         # The skip decision. Default is to relink; every clause below is a
         # positive proof that relinking would reproduce the file byte for
@@ -769,15 +951,17 @@ def main() -> int:
             affected = symbols_changed and (
                 bool(changed_names.intersection(entry["linked"]))
                 or (mention_pat is not None and mention_pat.search(body)))
-            if not affected:
+            if not affected and entry["files_fingerprint"] == files_fp:
                 cached = cached_links(entry)
-                if apply_block(text, cached, symbols) != text:
+                if apply_block(text, cached, symbols, entry["files"]) != text:
                     cached = None  # the block on disk is not what was promised
 
         note_ambiguous = []
+        note_file_ambiguous = []
         if cached is not None:
             skipped_unchanged += 1
             links = cached
+            note_files = list(entry["files"])
         else:
             links = []
             for sym, why in candidates(body, symbols, args.min_len, stop):
@@ -787,14 +971,26 @@ def main() -> int:
                     continue
                 links.append((sym, loc, f"{why}/{how}"))
             links = links[: args.max_links]
-        ambiguous += len(note_ambiguous)
-        if not note_ambiguous:
+            note_files = []
+            for ref, matches in outcomes:
+                if len(matches) == 1:
+                    if matches[0] not in note_files:
+                        note_files.append(matches[0])
+                elif len(matches) > 1:
+                    note_file_ambiguous.append((ref, matches))
+            # --max-links caps the TOTAL, symbols first — the block's own
+            # order is the budget's order.
+            note_files = note_files[: max(0, args.max_links - len(links))]
+        ambiguous += len(note_ambiguous) + len(note_file_ambiguous)
+        if not note_ambiguous and not note_file_ambiguous:
             new_state_notes[name] = {
                 "content_hash": note_hash,
                 "linked": [s for s, _l, _w in links],
                 "locations": [{"path": l["path"], "line": l.get("line")}
-                              for _s, l, _w in links]}
-        if not links:
+                              for _s, l, _w in links],
+                "files": list(note_files),
+                "files_fingerprint": files_fp}
+        if not links and not note_files:
             # Distinguish the causes rather than reporting a single count.
             known = [w for w in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", body)
                      if w in symbols]
@@ -810,11 +1006,18 @@ def main() -> int:
             print(f"AMBIGUOUS {sym} in {name} ({how})")
             for loc in symbols[sym]:
                 print(f"  - {fmt(loc)}")
-        if links:
+        for ref, matches in note_file_ambiguous:
+            ambiguous_files[ref].append(os.path.splitext(name)[0])
+            ambiguous_file_candidates[ref] = matches
+            print(f"AMBIGUOUS {ref} in {name} (file-suffix)")
+            for p in matches:
+                print(f"  - {p}")
+        if links or note_files:
             with_matches += 1
             total_links += len(links)
+            files_linked += len(note_files)
         if cached is None:  # a skipped note was proven identical already
-            new = apply_block(text, links, symbols)
+            new = apply_block(text, links, symbols, note_files)
             if new != text:
                 modified += 1
                 if not args.check:
@@ -825,6 +1028,11 @@ def main() -> int:
             file_rollup[loc["path"]].add((stem, sym))
             if args.explain:
                 print(f"{stem} -> {sym}\n    reason: {why}\n    destination: {fmt(loc)}")
+        for anchored in note_files:
+            file_notes[anchored].add(stem)
+            if args.explain:
+                print(f"{stem} -> {anchored}\n    reason: file-anchor\n"
+                      f"    destination: {anchored}")
 
     # v3 keeps the backend under `indexing`; reading the v2 field on a v3 index
     # printed "unknown" while the backend was perfectly well known.
@@ -847,6 +1055,28 @@ def main() -> int:
         refs = " ".join(f"[[{n}]]" for n in sorted({n for n, _ in backward[sym]}))
         loc = sorted({l for _, l in backward[sym]})[0].replace("|", r"\|")
         lines.append(f"| `{sym}` | {loc} | {refs} |")
+
+    # File anchors get their own table, after the symbols and before the
+    # hotspots. Rendered only when something anchored — the same rule the
+    # hotspot section follows. They do NOT feed the per-file hotspot rollup:
+    # hotspots count (note, symbol) links, and a file named as a thing is
+    # not a symbol located in a file.
+    if file_notes:
+        lines += [
+            "",
+            "## Files",
+            "",
+            "Notes anchored to a file rather than a symbol — configs,",
+            "scripts and infrastructure the code index has no name for.",
+            "",
+            "| file | notes |",
+            "|---|---|",
+        ]
+        for fpath in sorted(file_notes,
+                            key=lambda p: (-len(file_notes[p]), p)):
+            refs = " ".join(f"[[{n}]]" for n in sorted(file_notes[fpath]))
+            esc = fpath.replace("|", r"\|")
+            lines.append(f"| {esc} | {refs} |")
 
     # Three notes about one function is a signal worth seeing — and it should
     # not require counting wikilinks in the table above by hand. Rendered only
@@ -885,7 +1115,7 @@ def main() -> int:
                 esc = path.replace("|", r"\|")
                 lines.append(f"| {esc} | {distinct} | {len(file_rollup[path])} |")
 
-    if ambiguous_refs:
+    if ambiguous_refs or ambiguous_files:
         lines += [
             "",
             "## Ambiguous references",
@@ -900,6 +1130,15 @@ def main() -> int:
             lines += [f"### `{sym}`", "", f"Referenced by: {notes_ref}", "",
                       "Candidates:", ""]
             lines += [f"- {fmt(loc)}" for loc in symbols.get(sym, [])]
+            lines.append("")
+        # File references after the symbols, same shape: the candidates are
+        # the paths the suffix matched, and the linker refused to pick one.
+        for ref in sorted(ambiguous_files):
+            notes_ref = " ".join(f"[[{n}]]"
+                                 for n in sorted(set(ambiguous_files[ref])))
+            lines += [f"### `{ref}`", "", f"Referenced by: {notes_ref}", "",
+                      "Candidates:", ""]
+            lines += [f"- {p}" for p in ambiguous_file_candidates[ref]]
             lines.append("")
 
     index_text = "\n".join(lines) + "\n"
@@ -931,6 +1170,7 @@ def main() -> int:
                         "notes_modified": modified,
                         "notes_skipped_unchanged": skipped_unchanged,
                         "symbols_linked": total_links,
+                        "files_linked": files_linked,
                         "distinct_symbols": len(backward), "ambiguous_matches": ambiguous},
             "unlinked_notes": unlinked,
         }, indent=1))
@@ -942,6 +1182,11 @@ def main() -> int:
     print(f"notes_modified:     {modified}")
     print(f"notes_skipped_unchanged: {skipped_unchanged}")
     print(f"symbols_linked:     {total_links}")
+    if files_linked:
+        # Printed only when something anchored: the thirty-second demo's
+        # console output is a documented artifact, and a vault without file
+        # anchors must read exactly as it always did.
+        print(f"files_linked:       {files_linked}")
     print(f"distinct_symbols:   {len(backward)}")
     print(f"ambiguous_matches:  {ambiguous}")
     print(f"unlinked_notes:     {len(unlinked)}")
