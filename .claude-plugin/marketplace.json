@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "TraceLink — link engineering findings to the code they name.",
-    "version": "0.7.0"
+    "version": "0.7.1"
   },
   "plugins": [
     {
       "name": "tracelink",
       "source": "./",
       "description": "Turn an append-only findings register into a linked note vault, and connect every finding to the code it names — file and line.",
-      "version": "0.7.0",
+      "version": "0.7.1",
       "author": {
         "name": "Massimiliano Paragnani",
         "url": "https://aosol.cloud"

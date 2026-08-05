@@ -215,8 +215,11 @@ meets the note instead. Files with no notes cost ~0.2 ms and open nothing.
 sent back once, with instructions to append durable discoveries to the
 register in the linkable-findings contract — or append nothing if nothing
 qualifies. `tracelink lint` is the gate that keeps auto-captured findings
-honest: no named symbols, unknown symbols, near-duplicate titles or missing
-`STATUS:`/`SEVERITY:` each warn, and any warning is exit 1.
+honest: no named symbols, near-duplicate titles or missing
+`STATUS:`/`SEVERITY:` each warn, and any warning is exit 1. Unknown symbols
+warn only when a finding cites no reliable anchor at all; cited beside a
+known symbol they are informational — real notes name properties and env
+vars all the time, and a gate that always cries is a gate that gets ignored.
 
 Values must be JSON `true` — a `"true"` string or `1` stays off, silently.
 

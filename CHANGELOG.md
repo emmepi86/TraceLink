@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.7.1 — what dogfooding taught us
+
+Every change in this release was diagnosed by running tracelink against a
+real Next.js project and by benchmarking agents with and without the vault
+(see ROADMAP.md for the claim those benchmarks tested).
+
+- **The scan backend now indexes `export const` and named default
+  exports.** On the benchmark repository the old patterns missed the
+  dominant Next.js forms — `export const getImmobili = ...`,
+  `export default function robots()` — leaving the most-cited symbols out
+  of the index and the consult hook silent on their files. Coverage on that
+  repository went from 973 to 1,149 names.
+- **Lint anchors must be reliable.** Real findings cite properties, env
+  vars and YAML keys in backticks all the time: 9 of 10 real notes warned
+  `unknown-symbols` while linking perfectly, and a gate that always cries
+  is a gate that gets ignored. Unknown names now warn only when a finding
+  cites no reliable anchor at all; beside a known symbol they are
+  informational (`infos` in the JSON, additive). Reliable means: not a
+  stopword, and not ubiquitous — a name defined in more than 4 distinct
+  files (Next.js route configs like `dynamic` and `revalidate` are
+  everywhere) anchors nothing.
+- **`status` distinguishes ambiguity from tampering.** A note whose only
+  references are ambiguous never enters the link-state — by design — and
+  status reported it as a problem forever. It now reads the Ambiguous
+  references section of CODE-INDEX.md and reports such notes as
+  `ambiguous by design`, not as unverified.
+- Small knives sharpened: `index` creates the parent directory of `--out`
+  instead of failing; the plugin's over-threshold hint prints once per
+  project (persistent sentinel), not once per turn; a pre-existing
+  non-UTF-8 post-commit hook gets a clean refusal instead of a traceback;
+  the minimum identifier length is one public constant
+  (`DEFAULT_MIN_LEN`) shared by linker and lint; the linker names status
+  needs are public API instead of borrowed privates.
+
 ## 0.7.0 — the memory loop
 
 0.6.0 laid the rails; 0.7.0 closes the loop the ROADMAP promised: agents
