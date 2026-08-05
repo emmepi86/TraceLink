@@ -113,6 +113,14 @@ def _register_vault(register: str, vault: str):
         problems.append(f"register-not-found: {register}")
     if not va["found"]:
         problems.append(f"vault-not-found: {vault} (run split)")
+        # No vault means no manifest to learn the prefix from — but a found
+        # register still has real findings, and reporting it as "0 findings,
+        # prefix None" would be a false count, not an unknown. Parse it with
+        # the same fallback prefix the manifest-missing path uses.
+        if reg["found"]:
+            reg["prefix"] = "RES"
+            ids = list(splitter.split(register, "RES"))
+            reg["ids"], reg["count"] = ids, len(ids)
         return reg, va, {}, problems
 
     notes = _owned_notes(vault)

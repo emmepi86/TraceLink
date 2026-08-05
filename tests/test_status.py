@@ -213,6 +213,17 @@ class MissingInputsFailPolitelyNotWithATraceback(_StatusCase):
         self.assertNotIn("Traceback", out + err)
         self.assertIn("run split", out)
 
+    def test_an_absent_vault_does_not_falsify_the_register_count(self):
+        # Final-review finding: the early return on a missing vault used to
+        # skip the register parse, reporting a real register as "0 findings,
+        # prefix None" — a false count where the module promises unknowns.
+        # With no manifest to learn the prefix from, the default applies.
+        self.index()
+        rc, payload, err = self.status_json()
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(payload["register"]["prefix"], "RES")
+        self.assertGreater(payload["register"]["count"], 0)
+
     def test_an_absent_manifest_is_a_clear_message(self):
         self.index()
         os.mkdir(self.vault)

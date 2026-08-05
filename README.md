@@ -96,14 +96,20 @@ $ python3 scripts/split.py --register examples/FINDINGS.example.md --out /tmp/tl
   closed=1  open=1
 
 $ python3 scripts/symbols.py --repo examples/demo-project --backend scan --out /tmp/tl.json
-3 symbols via scan -> /tmp/tl.json
+3 names, 3 definitions via scan -> /tmp/tl.json
 
-$ python3 scripts/link.py --vault /tmp/tl --symbols /tmp/tl.json
+$ python3 scripts/link.py --vault /tmp/tl --symbols /tmp/tl.json --repo examples/demo-project
+index_freshness:   fresh
+reason:            fingerprint-match
+
 notes_scanned:      2
 notes_with_matches: 2
 notes_modified:     2
+notes_skipped_unchanged: 0
 symbols_linked:     3
 distinct_symbols:   3
+ambiguous_matches:  0
+unlinked_notes:     0
 ```
 
 Open `/tmp/tl/INDEX.md`. **RES-02 is `open`** even though its body contains the
