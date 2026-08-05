@@ -15,6 +15,7 @@ _COMMANDS = {
     "split": ("splitter", "turn a findings register into one note per finding"),
     "index": ("symbol_index", "build the symbol map (graphify | ctags | scan)"),
     "link": ("linker", "cross-link notes and code, both directions"),
+    "status": ("status", "one-shot health of register, vault, index and links"),
 }
 
 _USAGE = f"""tracelink {__version__}
@@ -24,6 +25,7 @@ usage: tracelink <command> [options]
   index   {_COMMANDS['index'][1]}
   split   {_COMMANDS['split'][1]}
   link    {_COMMANDS['link'][1]}
+  status  {_COMMANDS['status'][1]}
 
 Every command takes --help. A typical run:
 
