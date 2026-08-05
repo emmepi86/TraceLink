@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.8.0 — notes anchor to files, not just symbols
+
+The 2x2 benchmark (ROADMAP.md) measured where memory matters most: the
+operational knowledge that lives in no code symbol — deploy scripts, compose
+files, nginx quirks. Those were exactly the notes tracelink could not link.
+Now it can.
+
+- **File anchors.** A note that names a path — `infra/docker/compose.yml`
+  in backticks, or any bare reference containing a `/` — links to that file
+  when it resolves uniquely against the repository tree (same suffix
+  discipline as dotted names, same excludes as the scan backend). Ambiguous
+  suffixes are reported, never guessed; the register, the vault and
+  `.tracelink/` are never anchor targets. Next.js route segments
+  (`(group)`, `[param]`) are understood.
+- **The loop reaches infrastructure.** File anchors appear in the managed
+  block (path alone, no line), in a new `## Files` section of
+  CODE-INDEX.md, and in the consult hook: editing a compose file now
+  surfaces the note about the migrate service that can wedge the web
+  container. For lint, a resolved path is a reliable anchor — an
+  infra-only finding is no longer "prose".
+- **Ambiguity no longer erases knowledge.** The first cut dropped a note's
+  entire link-state entry if anything in it was ambiguous — one incidental
+  ambiguous word made consult blind to four resolved file anchors, forced
+  a re-process every run, and let status miscount. Caught by running
+  against the dogfood project, not by tests: every scanned note now has a
+  state entry, with ambiguity recorded beside the links instead of
+  destroying them (state schema v4-shaped v3; older state falls back to a
+  one-time full relink).
+- The capture prompt now tells the agent to lint with `--symbols` and
+  `--repo`, so file anchors count in the default workflow.
+
 ## 0.7.1 — what dogfooding taught us
 
 Every change in this release was diagnosed by running tracelink against a

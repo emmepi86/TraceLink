@@ -56,8 +56,14 @@ complete pass.
 
 Outputs: `<VAULT>/<ID>.md` per finding, `INDEX.md` (status and severity table,
 open+high listed separately), `CODE-INDEX.md` (symbol -> notes, plus a
-Hotspots section: symbols with ≥2 notes and per-file rollups — check it first
-when asked "what is known about this code").
+Hotspots section: symbols with ≥2 notes and per-file rollups, plus a Files
+section for notes anchored to paths — check it first when asked "what is
+known about this code").
+
+Notes anchor to files too: writing `infra/docker/compose.yml` in a finding
+links it to that file (unique suffix or nothing). When recording ops/deploy
+knowledge, NAME THE PATHS — that is what makes the warning reach the next
+agent who edits the file.
 
 Two more commands:
 

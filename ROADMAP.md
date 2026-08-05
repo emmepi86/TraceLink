@@ -54,7 +54,14 @@ The wow: agents *write* the register and the codebase *warns* the next agent.
 - **Opt-in by config** — both loops off by default; `.tracelink/config.json`
   turns them on per project.
 
-## 0.8.0 — the open convention
+## 0.8.0 — memory reaches infrastructure *(shipped)*
+
+- **File anchors** — notes link to files, not just symbols. The 2×2
+  benchmark measured memory's value peaking exactly where no code symbol
+  exists (deploy, compose, ops: −53% agent cost); now those notes anchor,
+  surface in CODE-INDEX and fire the consult hook when the file is touched.
+
+## 0.9.0 — the open convention
 
 - **`.tracelink/` as a tool-agnostic convention** — markdown + JSON in the
   repo, no API, no platform. Anything that can read files can read the

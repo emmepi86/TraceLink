@@ -197,6 +197,13 @@ without git: edits mark the vault stale, the end of the turn refreshes it.
 Hotspots come for free: `CODE-INDEX.md` lists the symbols with two or more
 notes and per-file rollups — the fragile places surface by themselves.
 
+Notes also anchor to **files**, not just symbols: name
+`infra/docker/compose.yml` or `deploy.sh` and the note links to it when the
+path resolves uniquely in the repository — deploy gotchas, nginx quirks and
+compose traps get the same treatment as code, a `## Files` section in
+CODE-INDEX.md, and a consult warning when an agent touches them. Ambiguous
+paths are reported, never guessed.
+
 ### The memory loop (Claude Code plugin)
 
 Two hooks close the loop between sessions — both **off by default**, opted
