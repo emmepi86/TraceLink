@@ -46,8 +46,10 @@ from .linker import (_CAMEL, _CODE_SPAN, _DEFAULT_STOP, _DOTTED, _SNAKE,
 from .splitter import (_SEVERITY_RE, _STATUS_RE, finding_pattern, severity,
                        split)
 
-#: The linker's --min-len default, mirrored: a bare identifier shorter than
-#: this would be filtered there, so lint must not count it as linkable here.
+#: The linker's --min-len default: a bare identifier shorter than this would
+#: be filtered there, so lint must not count it as linkable here. Mirrored,
+#: not imported — the linker states it only as an argparse default, so there
+#: is nothing to import; if that default ever changes, this must follow it.
 _MIN_LEN = 7
 
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")

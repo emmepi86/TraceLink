@@ -24,6 +24,19 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/on-session-start.sh",
+            "args": [],
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

@@ -360,6 +360,121 @@ class TestCaptureCheckStillRefreshes(unittest.TestCase):
             self.assertFalse(os.path.exists(marker(proj, ".stale")))
 
 
+class TestSessionClear(unittest.TestCase):
+    """A new session must not inherit the previous one's spent prompt or
+    stale baseline. SessionStart (matcher startup|clear) calls
+    `session-clear`, which drops the three capture markers — otherwise ONE
+    ignored prompt silences capture on the project forever: the next prompt
+    would only come when the register grows, and growing the register is
+    exactly what the missing prompt was supposed to cause."""
+
+    def test_ignored_prompt_does_not_silence_the_next_session(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = edited_session(make_project(tmp))
+            first = run_mode("capture-check", proj, stop_payload())
+            self.assertEqual(json.loads(first.stdout)["decision"], "block")
+            # the agent ignores the prompt; the session ends; a new one starts
+            r = run_mode("session-clear", proj)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(r.stdout, "")
+            self.assertEqual(r.stderr, "")
+            for name in (SESSION, BASELINE, PROMPTED):
+                self.assertFalse(os.path.exists(marker(proj, name)),
+                                 f"{name} survived the session boundary")
+            edited_session(proj)  # session 2 edits and records nothing
+            again = run_mode("capture-check", proj, stop_payload())
+            self.assertEqual(json.loads(again.stdout)["decision"], "block",
+                             "session 2 must get its own prompt")
+
+    def test_noop_without_tracelink_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            r = run_mode("session-clear", tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(r.stdout, "")
+            self.assertEqual(r.stderr, "")
+            self.assertFalse(os.path.exists(os.path.join(tmp, ".tracelink")))
+
+    def test_stale_marker_is_not_session_clears_business(self):
+        """`.stale` belongs to refresh; a session boundary says nothing
+        about the freshness of the index."""
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = edited_session(make_project(tmp))
+            self.assertTrue(os.path.exists(marker(proj, ".stale")))
+            run_mode("session-clear", proj)
+            self.assertTrue(os.path.exists(marker(proj, ".stale")))
+
+    def test_new_session_refreezes_the_baseline_after_late_growth(self):
+        """The lazy-cleanup gap: session 1 is prompted, appends, but its
+        growth is never observed (the continuation stop has
+        stop_hook_active=true and no natural stop follows). Without the
+        session boundary, session 2's first stop would spend the cleanup on
+        the OLD session's growth and consume session 2's own edit marker.
+        With it, session 2 starts clean, its baseline freezes the grown
+        register, and its own silence earns its own prompt."""
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = edited_session(make_project(tmp))
+            run_mode("capture-check", proj, stop_payload())  # prompt spent
+            with open(os.path.join(proj, "FINDINGS.md"), "a") as fh:
+                fh.write(NEW_FINDING)
+            # continuation stop: anti-loop passes, growth NOT observed
+            run_mode("capture-check", proj, stop_payload(active=True))
+            run_mode("session-clear", proj)  # session ends here
+            edited_session(proj)  # session 2 edits
+            with open(marker(proj, BASELINE)) as fh:
+                base = json.load(fh)
+            grown = (REGISTER_TEXT + NEW_FINDING).encode("utf-8")
+            self.assertEqual(base.get("size"), len(grown),
+                             "the new baseline must describe the register "
+                             "as session 2 found it, growth included")
+            r = run_mode("capture-check", proj, stop_payload())
+            self.assertEqual(json.loads(r.stdout)["decision"], "block",
+                             "session 2 recorded nothing and must be told")
+
+
+class TestSessionStartWiring(unittest.TestCase):
+    """The manifest entry and the wrapper that make session-clear happen."""
+
+    def test_manifest_has_session_start_for_new_sessions_only(self):
+        with open(os.path.join(HOOKS, "hooks.json")) as fh:
+            data = json.load(fh)
+        entry = data["hooks"]["SessionStart"][0]
+        self.assertEqual(entry["matcher"], "startup|clear",
+                         "resume/compact are the SAME logical session — "
+                         "clearing there would break one-prompt-per-session")
+        hook = entry["hooks"][0]
+        self.assertEqual(hook["type"], "command")
+        self.assertEqual(hook["command"],
+                         "${CLAUDE_PLUGIN_ROOT}/hooks/on-session-start.sh")
+        self.assertEqual(hook["args"], [])
+        self.assertLessEqual(hook["timeout"], 10)
+
+    def test_wrapper_is_executable_posix_sh(self):
+        import stat
+        path = os.path.join(HOOKS, "on-session-start.sh")
+        self.assertTrue(os.path.exists(path), path)
+        self.assertTrue(os.stat(path).st_mode & stat.S_IXUSR)
+        with open(path) as fh:
+            self.assertTrue(fh.readline().startswith("#!/bin/sh"))
+        r = subprocess.run(["sh", "-n", path], capture_output=True,
+                           text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_wrapper_clears_markers_end_to_end(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = edited_session(make_project(tmp))
+            run_mode("capture-check", proj, stop_payload())
+            env = dict(os.environ, CLAUDE_PROJECT_DIR=proj)
+            env.pop("TRACELINK_PROJECT_DIR", None)
+            r = subprocess.run([os.path.join(HOOKS, "on-session-start.sh")],
+                               input='{"hook_event_name": "SessionStart"}',
+                               capture_output=True, text=True, env=env,
+                               timeout=120)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(r.stdout, "")
+            for name in (SESSION, BASELINE, PROMPTED):
+                self.assertFalse(os.path.exists(marker(proj, name)), name)
+
+
 class TestOnStopWrapper(unittest.TestCase):
     """on-stop.sh used to drain stdin; now the payload must reach Python."""
 

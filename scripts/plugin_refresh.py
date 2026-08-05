@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Keep a project's tracelink vault fresh from the Claude Code plugin hooks.
 
-Four modes, four budgets:
+Five modes, five budgets:
 
   mark     runs after every Edit/Write/MultiEdit (PostToolUse). If the project
            has a `.tracelink/` directory, touch `.tracelink/.stale` and stop.
@@ -39,6 +39,14 @@ Four modes, four budgets:
            payload whose `stop_hook_active` is true always passes: that stop
            IS the continuation our own block caused, and blocking it again
            would loop forever.
+  session-clear
+           runs at SessionStart (matcher startup|clear — resume and compact
+           are the SAME logical session and must keep their markers). Drops
+           the three capture markers so a new session starts with a fresh
+           baseline and a fresh prompt. Without it, one ignored prompt
+           silences capture on the project forever: `.capture-prompted`
+           survives, and the only thing that would clear it is the register
+           growth the missing prompt was supposed to cause.
 
 The project directory is resolved in this order (the overrides exist so tests
 can point the script at a fixture without touching the real environment):
@@ -531,6 +539,14 @@ def main(argv=None) -> int:
             out = capture_check(project, payload)
             if out:
                 print(out)
+        elif mode == "session-clear":
+            # A new session begins: the previous one's capture cycle — spent
+            # prompt, pre-session baseline, edit marker — is over, whatever
+            # state it was abandoned in. `.stale` is untouched: a session
+            # boundary says nothing about the freshness of the index.
+            tl = os.path.join(project, ".tracelink")
+            if os.path.isdir(tl):
+                _clear_session(tl)
         # any other mode: a misconfigured hook must not become a blocked turn
     except Exception as exc:  # noqa: BLE001
         try:
