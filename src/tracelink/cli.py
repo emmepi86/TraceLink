@@ -16,6 +16,7 @@ _COMMANDS = {
     "index": ("symbol_index", "build the symbol map (graphify | ctags | scan)"),
     "link": ("linker", "cross-link notes and code, both directions"),
     "status": ("status", "one-shot health of register, vault, index and links"),
+    "hook": ("hook", "install a git post-commit hook that refreshes index and links"),
 }
 
 _USAGE = f"""tracelink {__version__}
@@ -26,6 +27,7 @@ usage: tracelink <command> [options]
   split   {_COMMANDS['split'][1]}
   link    {_COMMANDS['link'][1]}
   status  {_COMMANDS['status'][1]}
+  hook    {_COMMANDS['hook'][1]}
 
 Every command takes --help. A typical run:
 
