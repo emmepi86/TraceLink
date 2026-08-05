@@ -223,14 +223,30 @@ def check_finding(fid: str, blocks: List[str], prefix: str,
     # unknown, exactly like a backticked symbol the index never heard of;
     # a bare one is prose and stays silent. An ambiguous suffix is neither:
     # the file exists, and the linker reports the ambiguity itself.
+    #
+    # A token like `payments.validate` is extension-shaped AND dotted-name-
+    # shaped; both readings are live until resolution decides. File
+    # semantics CLAIM a reference that resolved to something, carries a
+    # slash, wears a known file extension, or could not be an identifier
+    # chain at all (`deploy-stage.sh`). An identifier-shaped token that
+    # resolved to nothing stays with symbol semantics — the unknown-symbols
+    # reading the index already owns — so a dotted citation the index knows
+    # is never reported as a missing file.
     file_results = []
     if file_map is not None:
         file_results = [(ref, why, resolve_file_ref(ref, file_map))
                         for ref, why in file_refs(blob)]
     resolved_files = [m[0] for _r, _w, m in file_results if len(m) == 1]
-    unknown_paths = [ref for ref, why, m in file_results
-                     if not m and why == "inline-code"]
-    handled_refs = {ref for ref, _w, _m in file_results}
+    unknown_paths: List[str] = []
+    claimed_refs: set = set()
+    for ref, why, matches in file_results:
+        if matches:
+            claimed_refs.add(ref)
+        elif ("/" in ref or _is_filename(ref)
+              or not _DOTTED.fullmatch(ref)):
+            claimed_refs.add(ref)
+            if why == "inline-code":
+                unknown_paths.append(ref)
 
     # (a) prose-only: nothing the linker could connect. With an index,
     # stopwords and ubiquitous symbols do not rescue a finding — if they
@@ -252,12 +268,13 @@ def check_finding(fid: str, blocks: List[str], prefix: str,
                 for name, _ in candidates(blob, symbols, DEFAULT_MIN_LEN,
                                           _DEFAULT_STOP))
     if not linkable:
-        # A resolved file reference anchors; a backticked or ambiguous one
-        # is still a deliberate citation of something real enough that
-        # "prose-only" would be the wrong complaint — rule (b) owns the
-        # unresolved backticked case.
-        linkable = any(why == "inline-code" or matches
-                       for _r, why, matches in file_results)
+        # A resolved file reference anchors; an ambiguous one, or a
+        # backticked file-shaped one that resolves nowhere, is still a
+        # deliberate citation — "prose-only" would be the wrong complaint,
+        # and rule (b) owns the unresolved backticked case. Identifier-
+        # shaped tokens already had their say through `idents` above.
+        linkable = (any(matches for _r, _w, matches in file_results)
+                    or bool(unknown_paths))
     if not linkable:
         # The advice must fit the failure. A finding that already has
         # identifiers — necessarily all stopwords or ubiquitous, or it would
@@ -281,7 +298,7 @@ def check_finding(fid: str, blocks: List[str], prefix: str,
     if symbols is not None or unknown_paths:
         unknown_idents = [] if symbols is None else [
             token for token in idents
-            if token not in handled_refs
+            if token not in claimed_refs
             and (tail := token.rsplit(".", 1)[-1]) not in symbols
             and tail not in _DEFAULT_STOP]
         unknown = sorted(set(unknown_idents) | set(unknown_paths))

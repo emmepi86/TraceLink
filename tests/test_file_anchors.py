@@ -634,6 +634,36 @@ class LintTreatsResolvedPathsAsAnchors(unittest.TestCase):
                          ["unknown-symbols"])
         self.assertEqual(rc, 0)
 
+    def test_a_known_dotted_symbol_is_never_a_missing_file(self):
+        """`payments.validate` is extension-shaped too. When the index
+        knows the tail and no such file exists, the symbol reading wins:
+        no unknown, no warning."""
+        symbols = os.path.join(self.base, "symbols.json")
+        with open(symbols, "w") as fh:
+            json.dump({"symbols": {"validate_totals": [
+                {"path": "src/payments.py", "line": 3, "kind": "py",
+                 "qualified_name": "payments.validate_totals"}]}}, fh)
+        self.write_register("`payments.validate_totals` rejects zero-line "
+                            "orders.")
+        rc, payload = self.lint("--repo", self.repo, "--symbols", symbols)
+        self.assertEqual(self.codes(payload), [], payload)
+        self.assertEqual(payload["infos"], [])
+        self.assertEqual(rc, 0)
+
+    def test_an_unresolved_stopword_chain_cannot_rescue_prose(self):
+        """`data.value` is extension-shaped but identifier-shaped too, and
+        its tail is a stopword: resolving to nothing must not turn it into
+        file evidence against prose-only."""
+        symbols = os.path.join(self.base, "symbols.json")
+        with open(symbols, "w") as fh:
+            json.dump({"symbols": {"unrelated_helper": [
+                {"path": "src/app.py", "line": 1, "kind": "py",
+                 "qualified_name": None}]}}, fh)
+        self.write_register("the pipeline mangles `data.value` sometimes.")
+        rc, payload = self.lint("--repo", self.repo, "--symbols", symbols)
+        self.assertIn("prose-only", self.codes(payload))
+        self.assertEqual(rc, 1)
+
     def test_the_register_is_never_its_own_anchor(self):
         """The register basename is excluded from resolution: a finding
         citing FINDINGS.md has cited the tool, not the code."""
