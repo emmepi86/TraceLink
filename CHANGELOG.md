@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.7.0 — the memory loop
+
+0.6.0 laid the rails; 0.7.0 closes the loop the ROADMAP promised: agents
+write the register, and the codebase warns the next agent. Both sides are
+**off by default** — `.tracelink/config.json` opts a project in:
+
+```json
+{"consult": true, "capture": true, "register": "FINDINGS.md"}
+```
+
+Values must be JSON `true` — a `"true"` string or `1` stays off, silently:
+a memory feature that half-triggers is worse than one that visibly doesn't.
+
+- **Consult on touch.** When Claude Code edits a file the vault knows about,
+  the relevant findings are injected into the turn — id, status, severity,
+  title, the symbols in that file with their lines, worst-first (open before
+  closed, then by severity), capped at five with an "…and N more in
+  CODE-INDEX.md" line after the pointer to the full notes. The lookup reads
+  only the link-state sidecar: a file with no notes costs one config read
+  and one JSON load (~0.2 ms), no note is opened, nothing is imported.
+- **Capture on close.** If a session edited code and recorded nothing, the
+  Stop hook sends the agent back once — with instructions to append durable
+  discoveries to the register in the linkable-findings contract (explicit
+  headings, `### STATUS:`/`### SEVERITY:`, named symbols), or to append
+  nothing if nothing qualifies. Once per session: a `SessionStart` hook
+  clears the session markers, so an ignored prompt in one session cannot
+  silence capture forever — the failure mode the first cut of this feature
+  shipped with, caught in review by replaying three sessions.
+- **`tracelink lint`.** The quality gate that makes auto-capture safe:
+  findings that name no linkable identifiers, cite symbols the index does
+  not know, nearly duplicate an existing note's title, or omit
+  `STATUS:`/`SEVERITY:` are each a warning, and any warning is exit 1. The
+  register is read, never written — like everywhere else in the tool.
+  `--new-only` checks only findings not yet split into the vault.
+
 ## 0.6.0 — the rails
 
 The direction is set out in [ROADMAP.md](ROADMAP.md): TraceLink is becoming

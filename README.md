@@ -197,6 +197,29 @@ without git: edits mark the vault stale, the end of the turn refreshes it.
 Hotspots come for free: `CODE-INDEX.md` lists the symbols with two or more
 notes and per-file rollups — the fragile places surface by themselves.
 
+### The memory loop (Claude Code plugin)
+
+Two hooks close the loop between sessions — both **off by default**, opted
+in per project via `.tracelink/config.json`:
+
+```json
+{"consult": true, "capture": true, "register": "FINDINGS.md"}
+```
+
+**Consult on touch** — when the agent edits a file the vault knows about,
+the findings anchored to it are injected into the turn (worst first, capped
+at five). An agent about to reintroduce a bug that was fixed twice before
+meets the note instead. Files with no notes cost ~0.2 ms and open nothing.
+
+**Capture on close** — a session that edited code and recorded nothing is
+sent back once, with instructions to append durable discoveries to the
+register in the linkable-findings contract — or append nothing if nothing
+qualifies. `tracelink lint` is the gate that keeps auto-captured findings
+honest: no named symbols, unknown symbols, near-duplicate titles or missing
+`STATUS:`/`SEVERITY:` each warn, and any warning is exit 1.
+
+Values must be JSON `true` — a `"true"` string or `1` stays off, silently.
+
 ### Symbol backends
 
 Tried in order, first one that produces symbols wins. Force with `--backend`.

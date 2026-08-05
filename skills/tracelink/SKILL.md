@@ -74,6 +74,23 @@ When this plugin is installed the vault also refreshes itself inside a
 session: edits mark it stale, the end of the turn re-runs index+link once
 (only in projects where `.tracelink/` exists).
 
+With `.tracelink/config.json` set to `{"consult": true, "capture": true}`
+the memory loop is on: editing a file the vault knows about injects its
+findings into the turn (read them before assuming the area is clean), and a
+session that edited code without recording anything is asked once, at stop,
+to append durable discoveries to the register — explicit symbols,
+`### STATUS:`/`### SEVERITY:` headings, or nothing if nothing qualifies.
+Validate additions with:
+
+```bash
+tracelink lint --register "${CLAUDE_PROJECT_DIR}/FINDINGS.md" \
+  --vault "${CLAUDE_PROJECT_DIR}/.tracelink/vault" \
+  --symbols "${CLAUDE_PROJECT_DIR}/.tracelink/symbols.json" --new-only
+```
+
+Exit 1 means a finding needs work (prose-only, unknown symbols, near
+duplicate, missing status/severity) — fix the finding, not the gate.
+
 ## Things that will bite
 
 - **Re-run steps 1 and 3 after code changes** — or let it happen for you:

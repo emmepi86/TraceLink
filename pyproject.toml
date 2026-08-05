@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 # so the distribution ships as tracelink-vault; the installed command is still
 # `tracelink` (see [project.scripts]).
 name = "tracelink-vault"
-version = "0.6.0"
+version = "0.7.0"
 description = "Link engineering findings to the code they name — file and line, both directions."
 readme = "README.md"
 license = { file = "LICENSE" }

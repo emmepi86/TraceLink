@@ -13,7 +13,7 @@ TraceLink already has the right container: findings anchored to `file:line`,
 re-linked as code moves, with staleness declared instead of guessed. The
 roadmap closes the loop around it.
 
-## 0.6.x — the rails *(in progress)*
+## 0.6.x — the rails *(shipped)*
 
 The friction killers: nothing here requires a human to remember anything.
 
@@ -34,7 +34,7 @@ The friction killers: nothing here requires a human to remember anything.
 - **Claude Code auto-refresh** — edits mark the vault stale, end-of-turn
   refreshes it. Zero cost during edits.
 
-## 0.7.0 — the memory loop
+## 0.7.0 — the memory loop *(shipped)*
 
 The wow: agents *write* the register and the codebase *warns* the next agent.
 
