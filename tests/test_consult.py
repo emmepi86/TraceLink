@@ -55,7 +55,7 @@ def note_md(note_id, status, severity, title):
 
 
 def make_project(tmp, notes, config={"consult": True}):
-    """A project with a hand-built vault + link-state (v2, same shape the
+    """A project with a hand-built vault + link-state (v3, same shape the
     linker writes). `notes`: (id, status, severity, title, [(sym, path, line)]).
     `config`: dict (written as json), raw str (written verbatim), or None
     (no config file at all)."""
@@ -65,7 +65,7 @@ def make_project(tmp, notes, config={"consult": True}):
     os.makedirs(os.path.join(proj, "src"))
     with open(os.path.join(proj, "src", "app.py"), "w") as fh:
         fh.write("def compute_total(items):\n    return sum(items)\n")
-    state = {"schema_version": 2,
+    state = {"schema_version": 3,
              "symbols_fingerprint": "sha256:0",
              "options_fingerprint": "sha256:0",
              "symbol_locations": {},
@@ -78,6 +78,8 @@ def make_project(tmp, notes, config={"consult": True}):
             "content_hash": "sha256:0",
             "linked": [s[0] for s in symbols],
             "locations": [{"path": s[1], "line": s[2]} for s in symbols],
+            "files": [],
+            "files_fingerprint": "sha256:0",
         }
     with open(os.path.join(vault, STATE_FILE), "w") as fh:
         json.dump(state, fh)

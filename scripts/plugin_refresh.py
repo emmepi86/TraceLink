@@ -12,9 +12,12 @@ Five modes, five budgets:
            — read the hook payload from stdin and, if the linker's sidecar
            state says the vault holds notes about the edited file, print a
            `hookSpecificOutput.additionalContext` JSON so Claude Code injects
-           those findings into the same turn. The lookup uses ONLY the
-           link-state already on disk (no tracelink import, no vault walk),
-           and only the notes that actually match get their frontmatter read.
+           those findings into the same turn. A note matches through the
+           symbols it links AND, since 0.8.0, through its file anchors —
+           editing compose.yml surfaces the infra note that names it. The
+           lookup uses ONLY the link-state already on disk (no tracelink
+           import, no vault walk), and only the notes that actually match
+           get their frontmatter read.
            A file without notes costs one config read and one json load.
   refresh  runs once at end of turn (Stop). If the marker exists, rebuild
            `.tracelink/symbols.json` and relink `.tracelink/vault` in-process,
@@ -165,7 +168,10 @@ _SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 _MAX_CONSULT_NOTES = 5
 
 _STATE_FILE = ".tracelink-link-state.json"
-_STATE_SCHEMA = 2
+#: v3 — the linker's schema since 0.8.0: each note entry carries a `files`
+#: array of file anchors next to linked/locations. An older state is
+#: silence, not a guess; the next refresh rewrites it.
+_STATE_SCHEMA = 3
 
 
 def _read_config(project):
@@ -273,7 +279,9 @@ def consult(project, payload_text):
     if not isinstance(notes, dict):
         return ""
 
-    hits = []  # (note_file, [(symbol, line), ...]) for notes linking `rel`
+    # (note_file, [(symbol, line), ...], file_hit) for notes linking `rel` —
+    # by symbol location or, since 0.8.0, by a file anchor in `files`.
+    hits = []
     for note_file, entry in notes.items():
         if not isinstance(entry, dict):
             continue
@@ -284,29 +292,35 @@ def consult(project, payload_text):
                    for name, loc in zip(linked, locations)
                    if isinstance(name, str) and isinstance(loc, dict)
                    and loc.get("path") == rel]
-        if symbols:
-            hits.append((str(note_file), symbols))
+        anchors = entry.get("files")
+        file_hit = isinstance(anchors, list) and rel in anchors
+        if symbols or file_hit:
+            hits.append((str(note_file), symbols, file_hit))
     if not hits:
         return ""
 
     ranked = []
-    for note_file, symbols in hits:
+    for note_file, symbols, file_hit in hits:
         note_id, status, severity, title = _note_head(vault, note_file)
+        matches = len(symbols) + (1 if file_hit else 0)
         ranked.append((0 if status == "open" else 1,
                        _SEVERITY_RANK.get(severity, len(_SEVERITY_RANK)),
-                       -len(symbols), note_id,
-                       (note_id, status, severity, title, symbols)))
+                       -matches, note_id,
+                       (note_id, status, severity, title, symbols, file_hit)))
     ranked.sort(key=lambda r: r[:4])
     shown = [r[-1] for r in ranked[:_MAX_CONSULT_NOTES]]
     hidden = len(ranked) - len(shown)
 
     lines = [f"TraceLink — known findings about this file ({rel}):"]
-    for note_id, status, severity, title, symbols in shown:
+    for note_id, status, severity, title, symbols, file_hit in shown:
         tag = "/".join(p for p in (status, severity) if p) or "?"
-        syms = ", ".join(f"{name} (L{line})" if isinstance(line, int)
-                         else name for name, line in symbols)
         head = f"- {note_id} [{tag}]" + (f" {title}" if title else "")
-        lines.append(f"{head} — symbols: {syms}")
+        if symbols:
+            syms = ", ".join(f"{name} (L{line})" if isinstance(line, int)
+                             else name for name, line in symbols)
+            lines.append(f"{head} — symbols: {syms}")
+        else:  # a pure file anchor: the file itself is the citation
+            lines.append(f"{head} — file: {rel}")
     lines.append("(full notes: .tracelink/vault/<id>.md — read before "
                  "assuming this area is clean)")
     if hidden:

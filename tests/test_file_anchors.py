@@ -402,5 +402,137 @@ class StatusStaysCompatible(_AnchorCase):
         self.assertNotIn("unlinked-notes: 1", payload["problems"])
 
 
+SCRIPTS = os.path.join(ROOT, "scripts")
+sys.path.insert(0, SCRIPTS)
+
+import plugin_refresh  # noqa: E402
+
+
+def _consult_project(tmp, entry_files, linked=(), status="open",
+                     severity="medium", schema=3):
+    """A project with one hand-built note + v3 link-state, the same shape
+    the linker now writes: `files` next to linked/locations."""
+    proj = os.path.join(tmp, "proj")
+    vault = os.path.join(proj, ".tracelink", "vault")
+    os.makedirs(vault)
+    os.makedirs(os.path.join(proj, "infra", "docker"))
+    with open(os.path.join(proj, "infra", "docker", "compose.yml"), "w") as fh:
+        fh.write("services: {}\n")
+    with open(os.path.join(vault, "TODI-9.md"), "w") as fh:
+        fh.write(f"---\ntracelink_schema: 1\ntracelink_id: TODI-9\n"
+                 f"id: TODI-9\nstatus: {status}\nseverity: {severity}\n---\n\n"
+                 f"# TODI-9 — compose ports drift [{severity.upper()}]\n\n"
+                 "Body consult must never read.\n")
+    state = {"schema_version": schema,
+             "symbols_fingerprint": "sha256:0",
+             "options_fingerprint": "sha256:0",
+             "symbol_locations": {},
+             "notes": {"TODI-9.md": {
+                 "content_hash": "sha256:0",
+                 "linked": [s[0] for s in linked],
+                 "locations": [{"path": s[1], "line": s[2]} for s in linked],
+                 "files": list(entry_files),
+                 "files_fingerprint": "sha256:0"}}}
+    with open(os.path.join(vault, STATE), "w") as fh:
+        json.dump(state, fh)
+    with open(os.path.join(proj, ".tracelink", "config.json"), "w") as fh:
+        json.dump({"consult": True}, fh)
+    return proj
+
+
+def _payload(path):
+    return json.dumps({"tool_name": "Edit", "tool_input": {"file_path": path}})
+
+
+class ConsultSpeaksForAnchoredFiles(unittest.TestCase):
+    def test_editing_an_anchored_file_injects_the_note_with_file_prefix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = _consult_project(tmp, ["infra/docker/compose.yml"])
+            out = plugin_refresh.consult(proj, _payload(
+                os.path.join(proj, "infra", "docker", "compose.yml")))
+        self.assertTrue(out, "consult stayed mute on an anchored file")
+        ctx = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("infra/docker/compose.yml", ctx)
+        self.assertIn("- TODI-9 [open/medium] compose ports drift "
+                      "— file: infra/docker/compose.yml", ctx)
+        self.assertNotIn("symbols:", ctx)
+
+    def test_a_symbol_match_keeps_its_format_untouched(self):
+        """Regression guard: file anchors extend consult, they do not
+        reformat the symbol path."""
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = _consult_project(
+                tmp, [], linked=[("compose_ports", "src/app.py", 7)])
+            src = os.path.join(proj, "src")
+            os.makedirs(src)
+            open(os.path.join(src, "app.py"), "w").close()
+            out = plugin_refresh.consult(proj, _payload(
+                os.path.join(src, "app.py")))
+        ctx = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("symbols: compose_ports (L7)", ctx)
+        self.assertNotIn("file:", ctx)
+
+    def test_an_unanchored_file_stays_silent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = _consult_project(tmp, ["infra/docker/compose.yml"])
+            other = os.path.join(proj, "infra", "other.yml")
+            open(other, "w").close()
+            out = plugin_refresh.consult(proj, _payload(other))
+        self.assertEqual(out, "")
+
+    def test_a_v2_state_on_disk_is_silence_not_a_guess(self):
+        """The consult path reads only the state; a pre-0.8 state has no
+        files array and a shape this code never audited."""
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = _consult_project(tmp, ["infra/docker/compose.yml"],
+                                    schema=2)
+            out = plugin_refresh.consult(proj, _payload(
+                os.path.join(proj, "infra", "docker", "compose.yml")))
+        self.assertEqual(out, "")
+
+
+class ConsultEndToEndThroughTheLinker(unittest.TestCase):
+    """No hand-built state: split, link with --repo, then consult — the
+    whole promise, an agent editing compose.yml gets the infra note."""
+
+    def test_the_loop_closes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = os.path.join(tmp, "proj")
+            os.makedirs(os.path.join(proj, "infra", "docker"))
+            with open(os.path.join(proj, "infra", "docker",
+                                   "compose.yml"), "w") as fh:
+                fh.write("services: {}\n")
+            register = os.path.join(proj, "FINDINGS.md")
+            with open(register, "w") as fh:
+                fh.write("# Findings\n\n"
+                         "## RES-01 — compose ports drift [HIGH]\n"
+                         "### STATUS: OPEN\n"
+                         "the stage stack breaks when "
+                         "`infra/docker/compose.yml` changes ports.\n")
+            vault = os.path.join(proj, ".tracelink", "vault")
+            subprocess.run(
+                [sys.executable, f"{ROOT}/scripts/split.py", "--register",
+                 register, "--out", vault, "--prefix", "RES"],
+                capture_output=True, text=True)
+            syms = os.path.join(proj, ".tracelink", "symbols.json")
+            with open(syms, "w") as fh:
+                json.dump({"backend": "test",
+                           "symbols": {"unrelated": "src/x.py:L1"}}, fh)
+            r = subprocess.run(
+                [sys.executable, f"{ROOT}/scripts/link.py", "--vault", vault,
+                 "--symbols", syms, "--repo", proj],
+                capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            with open(os.path.join(proj, ".tracelink", "config.json"),
+                      "w") as fh:
+                json.dump({"consult": True}, fh)
+            out = plugin_refresh.consult(proj, _payload(
+                os.path.join(proj, "infra", "docker", "compose.yml")))
+        self.assertTrue(out, "the linker's own state did not feed consult")
+        ctx = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("RES-01", ctx)
+        self.assertIn("file: infra/docker/compose.yml", ctx)
+
+
 if __name__ == "__main__":
     unittest.main()
