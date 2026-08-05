@@ -10,7 +10,10 @@ rules, each one a way a finding fails its future reader:
                     imported rather than copied — the same code-span, snake,
                     camel and dotted patterns `candidates()` uses — because a
                     private reimplementation would drift and lint would start
-                    promising links the linker refuses.
+                    promising links the linker refuses. A finding whose only
+                    "identifiers" are stopwords or ubiquitous symbols is
+                    prose-only too: framework vocabulary in backticks is
+                    still prose.
   unknown-symbols   with --symbols: deliberately-spelled identifiers the
                     index has never heard of. A WARNING only when the finding
                     cites NO known symbol at all — then the unknowns are the
@@ -23,6 +26,13 @@ rules, each one a way a finding fails its future reader:
                     physiological in real notes and no index defines them. A
                     gate that cries almost every time gets ignored — and
                     capture leans on lint.
+                    "Known symbol" means a RELIABLE anchor: linker stopwords
+                    (`_DEFAULT_STOP`) and UBIQUITOUS symbols — defined in
+                    more than `_UBIQUITY_LIMIT` distinct files — do not
+                    count, even though the index lists them. Ubiquitous
+                    symbols are still in the index, so they are never
+                    reported as unknown (neither warning nor info): they
+                    simply anchor nothing. Same for prose-only below.
   duplicate         with --vault: a title that normalises to an existing
                     note's title. The same discovery recorded twice reads as
                     two findings and links as none of them.
@@ -61,6 +71,15 @@ from .splitter import (_SEVERITY_RE, _STATUS_RE, finding_pattern, severity,
 #: is nothing to import; if that default ever changes, this must follow it.
 _MIN_LEN = 7
 
+#: A symbol defined in more than this many distinct files is UBIQUITOUS and
+#: never counts as an anchor. Next.js made the need concrete: `dynamic`,
+#: `revalidate` and `runtime` are `export const` route-config in dozens of
+#: routes, so citing them is framework vocabulary, not evidence the finding
+#: is anchored to real code. The rule is data-driven on purpose — no
+#: hardcoded framework names, so `up`/`down` across a migrations tree trip
+#: the same wire without anyone listing them.
+_UBIQUITY_LIMIT = 4
+
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 #: A dotted token whose tail is a file extension is a filename, not a
 #: qualified name — `app.py` must not become a citation of a symbol `py`.
@@ -74,6 +93,29 @@ _FILE_EXTS = {
 
 def _is_filename(token: str) -> bool:
     return token.rsplit(".", 1)[-1].lower() in _FILE_EXTS
+
+
+def _is_ubiquitous(name: str, symbols: dict) -> bool:
+    """Defined in more than _UBIQUITY_LIMIT distinct files of the index."""
+    locations = symbols.get(name)
+    if not isinstance(locations, list):
+        return False
+    paths = {loc.get("path") for loc in locations if isinstance(loc, dict)}
+    return len(paths) > _UBIQUITY_LIMIT
+
+
+def _is_anchor(token: str, symbols: dict) -> bool:
+    """Whether a cited token is reliable evidence of anchoring.
+
+    Known to the index AND not a linker stopword AND not ubiquitous. A
+    backticked `config` does link when some file defines one, but half a
+    codebase defines a `config`; and a symbol living in dozens of files
+    (`dynamic` in a Next repo) names a convention, not a place. Neither is
+    the kind of citation that should vouch for a finding's unknowns.
+    """
+    tail = token.rsplit(".", 1)[-1]
+    return (tail in symbols and tail not in _DEFAULT_STOP
+            and not _is_ubiquitous(tail, symbols))
 
 
 def deliberate_identifiers(text: str) -> List[str]:
@@ -171,29 +213,44 @@ def check_finding(fid: str, blocks: List[str], prefix: str,
     blob = "\n\n".join(blocks)
     idents = deliberate_identifiers(blob)
 
-    # (a) prose-only: nothing the linker could connect. With an index the
-    # linker's own candidate scan gets the final word — a bare word the
-    # index knows is linkable even without an underscore.
-    linkable = bool(idents)
-    if not linkable and symbols is not None:
-        linkable = bool(candidates(blob, symbols, _MIN_LEN, _DEFAULT_STOP))
+    # (a) prose-only: nothing the linker could connect. With an index,
+    # stopwords and ubiquitous symbols do not rescue a finding — if they
+    # are its only "identifiers", it is prose wearing backticks — and the
+    # linker's own candidate scan gets the final word (a bare word the
+    # index knows is linkable even without an underscore), filtered the
+    # same way so `dynamic` as an English word cannot rescue it either.
+    if symbols is None:
+        linkable = bool(idents)
+    else:
+        linkable = any(
+            (tail := token.rsplit(".", 1)[-1]) not in _DEFAULT_STOP
+            and not _is_ubiquitous(tail, symbols)
+            for token in idents)
+        if not linkable:
+            linkable = any(
+                name.lower() not in _DEFAULT_STOP
+                and not _is_ubiquitous(name, symbols)
+                for name, _ in candidates(blob, symbols, _MIN_LEN,
+                                          _DEFAULT_STOP))
     if not linkable:
         warnings.append({"id": fid, "code": "prose-only",
                          "detail": "no linkable identifiers — name the exact "
                                    "symbols in backticks"})
 
     # (b) unknown symbols: deliberate spellings the index cannot resolve.
-    # A warning only when NOTHING in the finding is known — then the
-    # unknowns are all it cites, and fixing them is the whole job. Next to
-    # a known symbol they are almost always properties, env vars or config
-    # keys (the benchmark's 9/10), so they inform without gating.
+    # A warning only when NOTHING in the finding is a reliable ANCHOR —
+    # then the unknowns are all it cites, and fixing them is the whole
+    # job. Next to an anchor they are almost always properties, env vars
+    # or config keys (the benchmark's 9/10), so they inform without
+    # gating. Stopwords and ubiquitous symbols are in the index, so they
+    # are never unknown themselves — they just cannot vouch for others.
     if symbols is not None:
         unknown = sorted(
             token for token in idents
             if (tail := token.rsplit(".", 1)[-1]) not in symbols
             and tail not in _DEFAULT_STOP)
         if unknown:
-            cites_known = any(token.rsplit(".", 1)[-1] in symbols
+            cites_known = any(_is_anchor(token, symbols)
                               for token in idents)
             if cites_known:
                 infos.extend(

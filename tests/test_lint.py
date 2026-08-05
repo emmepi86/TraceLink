@@ -9,7 +9,12 @@ Four rules, each catching a way a finding fails its future reader:
                     only when the finding cites NO known symbol; alongside
                     known ones the unknowns are INFO lines (`infos` in the
                     JSON), because on the real benchmark 9/10 linked notes
-                    were warning over properties and config keys
+                    were warning over properties and config keys. Anchors
+                    must be reliable: linker stopwords and UBIQUITOUS
+                    symbols (defined in more than _UBIQUITY_LIMIT distinct
+                    files — Next's `dynamic`/`revalidate`/`runtime`) count
+                    neither as anchors here nor as identifiers for
+                    prose-only, yet are never reported unknown themselves
   duplicate         with --vault: a title that normalises to an existing
                     note's title — the same discovery recorded twice
   missing-status /  the explicit `### STATUS:` / severity grammar the
@@ -82,12 +87,18 @@ class _LintCase(unittest.TestCase):
             fh.write(text)
 
     def write_symbols(self, names):
+        """names: iterable of symbol names (one definition in src/app.py
+        each) or dict name -> list of defining paths, for symbols defined
+        in many files (the ubiquity rule)."""
+        mapping = (names if isinstance(names, dict)
+                   else {n: ["src/app.py"] for n in names})
         path = os.path.join(self.base, "symbols.json")
         with open(path, "w") as fh:
-            json.dump({"symbols": {n: [{"path": "src/app.py", "line": 1,
+            json.dump({"symbols": {n: [{"path": p, "line": 1,
                                         "kind": "function",
-                                        "qualified_name": n}]
-                                   for n in names}}, fh)
+                                        "qualified_name": n}
+                                       for p in paths]
+                                   for n, paths in mapping.items()}}, fh)
         return path
 
     def write_vault(self, notes, prefix="RES"):
@@ -262,6 +273,104 @@ class TestUnknownSymbolsDemotedToInfo(_LintCase):
         report = json.loads(out)
         self.assertIn("infos", report)
         self.assertEqual(report["infos"], [])
+
+
+class TestAnchorsExcludeStopwordsAndUbiquity(_LintCase):
+    """Only reliable symbols count as ANCHORS (cites_known / prose-only):
+    linker stopwords are out even when the index defines them, and so are
+    UBIQUITOUS symbols — defined in more than _UBIQUITY_LIMIT distinct
+    files. In a Next repo `dynamic`/`revalidate`/`runtime` are `export
+    const` in dozens of routes: citing them is framework vocabulary, not
+    evidence of anchoring. They stay out of unknown-symbols (they ARE in
+    the index); they simply anchor nothing."""
+
+    def ubiquitous(self, name, files=10):
+        return {name: [f"app/route{i}/page.tsx" for i in range(files)]}
+
+    def test_only_a_ubiquitous_symbol_is_prose_only(self):
+        self.write_register("## RES-01 — route config [HIGH]\n"
+                            "### STATUS: OPEN\n"
+                            "`dynamic` is forced on every route.\n")
+        symbols = self.write_symbols(self.ubiquitous("dynamic"))
+        rc, out, _ = _run(["--register", self.register,
+                           "--symbols", symbols, "--format", "json"])
+        self.assertEqual(rc, 1)
+        report = json.loads(out)
+        self.assertIn("prose-only", self.codes_for(report, "RES-01"))
+        # In the index, so never unknown — neither warning nor info.
+        self.assertNotIn("unknown-symbols", self.codes_for(report))
+        self.assertEqual(report["infos"], [])
+
+    def test_real_anchor_still_demotes_unknowns_beside_ubiquity(self):
+        self.write_register("## RES-01 — cache [HIGH]\n### STATUS: OPEN\n"
+                            "`getConfig` sets `dynamic`, but "
+                            "`made_up_helper` corrupts the cache.\n")
+        symbols = self.write_symbols(
+            {"getConfig": ["src/hub.ts"], **self.ubiquitous("dynamic")})
+        rc, out, _ = _run(["--register", self.register,
+                           "--symbols", symbols, "--format", "json"])
+        self.assertEqual(rc, 0, out)
+        report = json.loads(out)
+        self.assertEqual(report["warnings"], [])
+        self.assertEqual([i["code"] for i in report["infos"]],
+                         ["unknown-symbols"])
+        self.assertIn("made_up_helper", report["infos"][0]["detail"])
+
+    def test_ubiquitous_symbol_alone_does_not_demote_unknowns(self):
+        self.write_register("## RES-01 — cache [HIGH]\n### STATUS: OPEN\n"
+                            "`dynamic` is set but `made_up_helper` "
+                            "corrupts the cache.\n")
+        symbols = self.write_symbols(self.ubiquitous("dynamic"))
+        rc, out, _ = _run(["--register", self.register,
+                           "--symbols", symbols, "--format", "json"])
+        self.assertEqual(rc, 1)
+        report = json.loads(out)
+        self.assertIn("unknown-symbols", self.codes_for(report, "RES-01"))
+        self.assertNotIn("prose-only", self.codes_for(report))
+        self.assertEqual(report["infos"], [])
+
+    def test_indexed_stopword_does_not_anchor(self):
+        """F2: `export const config` puts `config` in a Next index, but a
+        stopword must not turn unknowns into infos."""
+        self.write_register("## RES-01 — ghost [HIGH]\n### STATUS: OPEN\n"
+                            "`config` is read but `made_up_helper` "
+                            "corrupts the cache.\n")
+        symbols = self.write_symbols(["config"])
+        rc, out, _ = _run(["--register", self.register,
+                           "--symbols", symbols, "--format", "json"])
+        self.assertEqual(rc, 1)
+        report = json.loads(out)
+        self.assertIn("unknown-symbols", self.codes_for(report, "RES-01"))
+        self.assertEqual(report["infos"], [])
+
+    def test_at_the_limit_a_symbol_still_anchors(self):
+        """Ubiquity means MORE than _UBIQUITY_LIMIT distinct files."""
+        self.write_register("## RES-01 — cache [HIGH]\n### STATUS: OPEN\n"
+                            "`dynamic` is set but `made_up_helper` "
+                            "corrupts the cache.\n")
+        symbols = self.write_symbols(
+            self.ubiquitous("dynamic", files=lint._UBIQUITY_LIMIT))
+        rc, out, _ = _run(["--register", self.register,
+                           "--symbols", symbols, "--format", "json"])
+        self.assertEqual(rc, 0, out)
+        report = json.loads(out)
+        self.assertEqual(report["warnings"], [])
+        self.assertEqual([i["code"] for i in report["infos"]],
+                         ["unknown-symbols"])
+
+    def test_bare_ubiquitous_words_do_not_rescue_prose(self):
+        """F3: prose containing the English words dynamic/runtime passed
+        prose-only through the index's candidate scan."""
+        self.write_register("## RES-01 — vibes [HIGH]\n### STATUS: OPEN\n"
+                            "The dynamic behaviour at runtime feels "
+                            "wrong everywhere.\n")
+        symbols = self.write_symbols({**self.ubiquitous("dynamic"),
+                                      **self.ubiquitous("runtime")})
+        rc, out, _ = _run(["--register", self.register,
+                           "--symbols", symbols, "--format", "json"])
+        self.assertEqual(rc, 1)
+        self.assertIn("prose-only",
+                      self.codes_for(json.loads(out), "RES-01"))
 
 
 class TestDuplicates(_LintCase):
