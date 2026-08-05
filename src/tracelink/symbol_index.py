@@ -320,9 +320,17 @@ def from_ctags(repo: str) -> Tuple[Dict[str, str], Optional[str]]:
 #: use ctags or graphify.
 _DEF_PATTERNS = (
     (".py", re.compile(r"^\s*(?:async\s+)?(?:def|class)\s+([A-Za-z_]\w*)")),
-    (".js", re.compile(r"^\s*(?:export\s+)?(?:async\s+)?(?:function|class)\s+([A-Za-z_$]\w*)")),
-    (".ts", re.compile(r"^\s*(?:export\s+)?(?:abstract\s+)?(?:async\s+)?(?:function|class|interface|type|enum)\s+([A-Za-z_$]\w*)")),
-    (".tsx", re.compile(r"^\s*(?:export\s+)?(?:async\s+)?(?:function|class|interface|type)\s+([A-Za-z_$]\w*)")),
+    # JS/TS also index `export const/let/var NAME = ...` and `export default
+    # function NAME()`. These are the dominant definition forms in modern
+    # Next.js code, and the 0.7.0 benchmark on a real repository
+    # (.dev/benchmark-todi-2026-08-05.md) showed the scan missing getImmobili,
+    # DEFAULT_TIMERS and robots for exactly this reason — silently costing
+    # link rate, hotspots and consult notes downstream. Anonymous default
+    # exports stay out (nothing to name); non-exported const/let/var stay out
+    # too, deliberately, or every local binding would drown the map.
+    (".js", re.compile(r"^\s*(?:(?:export\s+(?:default\s+)?)?(?:async\s+)?(?:function|class)|export\s+(?:const|let|var))\s+([A-Za-z_$]\w*)")),
+    (".ts", re.compile(r"^\s*(?:(?:export\s+(?:default\s+)?)?(?:abstract\s+)?(?:async\s+)?(?:function|class|interface|type|enum)|export\s+(?:const|let|var)(?:\s+enum)?)\s+([A-Za-z_$]\w*)")),
+    (".tsx", re.compile(r"^\s*(?:(?:export\s+(?:default\s+)?)?(?:async\s+)?(?:function|class|interface|type)|export\s+(?:const|let|var)(?:\s+enum)?)\s+([A-Za-z_$]\w*)")),
     (".go", re.compile(r"^\s*(?:func|type)\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)")),
     (".rs", re.compile(r"^\s*(?:pub\s+)?(?:async\s+)?(?:fn|struct|enum|trait|impl)\s+([A-Za-z_]\w*)")),
     (".java", re.compile(r"^\s*(?:public|private|protected|static|final|abstract|\s)*(?:class|interface|enum|record)\s+([A-Za-z_]\w*)")),
@@ -419,6 +427,12 @@ def main() -> int:
               "exclude": sorted(_SKIP_DIRS)} if used == "scan"
              else {"kind": used})
     config = {"backend": used, "exclude": sorted(_SKIP_DIRS), "max_files": 20000}
+    if used == "scan":
+        # The regexes ARE the scan's configuration: change them and the same
+        # tree yields a different symbol map. Folding them into the fingerprint
+        # is what lets an index built with older patterns say "regenerate me"
+        # instead of passing for equivalent.
+        config["patterns"] = {ext: rx.pattern for ext, rx in _DEF_PATTERNS}
     partial = bool(fp_warnings) or any("max-files-reached" in n for n in notes)
     with open(args.out, "w") as fh:
         json.dump({

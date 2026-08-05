@@ -585,6 +585,125 @@ class EveryBackendPreservesDuplicates(unittest.TestCase):
         self.assertIsNone(syms["validate"][0]["qualified_name"])
 
 
+class ScanIndexesModernJsTsExports(unittest.TestCase):
+    """The 0.7.0 benchmark on a real Next.js repository
+    (.dev/benchmark-todi-2026-08-05.md) showed the scan blind to the DOMINANT
+    definition forms of that ecosystem: `export const getImmobili =
+    unstable_cache(...)`, `export const DEFAULT_TIMERS: VetrinaTimers = {`
+    and `export default function robots()` were all unindexed. The cost was
+    silent and cascading — lower link rate, missing hotspots, and session.ts
+    lost its consult notes because DEFAULT_TIMERS did not exist to the map."""
+
+    def _scan(self, fname, source):
+        from tracelink import symbol_index as symbols
+        with tempfile.TemporaryDirectory() as tmp:
+            open(os.path.join(tmp, fname), "w").write(source)
+            syms, err, _considered = symbols.from_scan(tmp)
+        self.assertIsNone(err)
+        return syms
+
+    def test_export_const_with_a_call_rvalue(self):
+        syms = self._scan("immobili.ts",
+                          "import { unstable_cache } from 'next/cache';\n"
+                          "\n"
+                          "export const getImmobili = unstable_cache(async () => {\n"
+                          "  return [];\n"
+                          "});\n")
+        self.assertEqual(syms["getImmobili"][0]["line"], 3)
+        self.assertEqual(syms["getImmobili"][0]["kind"], "ts")
+
+    def test_export_const_with_a_type_annotation(self):
+        syms = self._scan("session.ts",
+                          "export const DEFAULT_TIMERS: VetrinaTimers = {\n"
+                          "  idleMs: 30000,\n"
+                          "};\n")
+        self.assertEqual(syms["DEFAULT_TIMERS"][0]["line"], 1)
+
+    def test_export_default_function(self):
+        syms = self._scan("robots.ts",
+                          "export default function robots() {\n"
+                          "  return { rules: [] };\n"
+                          "}\n")
+        self.assertEqual(syms["robots"][0]["line"], 1)
+
+    def test_export_default_async_function(self):
+        syms = self._scan("page.tsx",
+                          "export default async function HomePage() {\n"
+                          "  return null;\n"
+                          "}\n")
+        self.assertEqual(syms["HomePage"][0]["line"], 1)
+
+    def test_anonymous_default_export_is_skipped_without_crashing(self):
+        """There is no name to index, and inventing one would be a guess."""
+        syms = self._scan("anon.ts",
+                          "export default function () {\n"
+                          "  return 1;\n"
+                          "}\n")
+        self.assertEqual(syms, {})
+
+    def test_a_private_const_is_not_indexed(self):
+        """Only exported declarations enter the map — indexing every local
+        binding would drown it in noise."""
+        syms = self._scan("noise.ts",
+                          "const privata = 1;\n"
+                          "let cursore = null;\n"
+                          "var vecchia = true;\n")
+        self.assertEqual(syms, {})
+
+    def test_export_let_and_var_ride_the_same_form(self):
+        for fname in ("a.ts", "b.tsx", "c.js"):
+            with self.subTest(fname=fname):
+                syms = self._scan(fname,
+                                  "export let cursor = null;\n"
+                                  "export var legacy = 1;\n")
+                self.assertEqual(syms["cursor"][0]["line"], 1)
+                self.assertEqual(syms["legacy"][0]["line"], 2)
+
+    def test_preexisting_patterns_still_match_in_a_mixed_file(self):
+        syms = self._scan("mixed.ts",
+                          "export interface Listing { id: string }\n"
+                          "export type Slug = string;\n"
+                          "export enum Stato { Attivo }\n"
+                          "export abstract class Repo {}\n"
+                          "export async function load() {}\n"
+                          "function helper() {}\n"
+                          "class Internal {}\n"
+                          "export const RATE = 3;\n")
+        for name, line in (("Listing", 1), ("Slug", 2), ("Stato", 3),
+                           ("Repo", 4), ("load", 5), ("helper", 6),
+                           ("Internal", 7), ("RATE", 8)):
+            with self.subTest(name=name):
+                self.assertEqual(syms[name][0]["line"], line)
+
+    def test_the_configuration_fingerprint_tracks_the_scan_patterns(self):
+        """The regexes ARE the scan's configuration. An index built with the
+        old patterns must not fingerprint as identical to one built with the
+        new — otherwise nothing ever says "regenerate me"."""
+        import json
+        import subprocess
+        from tracelink import symbol_index as symbols
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with tempfile.TemporaryDirectory() as tmp:
+            open(os.path.join(tmp, "robots.ts"), "w").write(
+                "export default function robots() {}\n")
+            out = os.path.join(tmp, "s.json")
+            subprocess.run([sys.executable, f"{root}/scripts/symbols.py",
+                            "--repo", tmp, "--backend", "scan", "--out", out],
+                           check=True, capture_output=True)
+            d = json.load(open(out))
+        config = d["indexing"]["configuration"]
+        self.assertEqual(config["patterns"],
+                         {ext: rx.pattern for ext, rx in symbols._DEF_PATTERNS})
+        self.assertEqual(d["indexing"]["configuration_fingerprint"],
+                         symbols.config_fingerprint(config))
+        without = {k: v for k, v in config.items() if k != "patterns"}
+        self.assertNotEqual(symbols.config_fingerprint(without),
+                            symbols.config_fingerprint(config))
+        # The scope descriptor stays coherent: same extensions the patterns cover.
+        self.assertEqual(d["indexing"]["scope"]["extensions"],
+                         sorted({e for e, _rx in symbols._DEF_PATTERNS}))
+
+
 class ContradictoryEvidenceStaysAmbiguous(unittest.TestCase):
     TWO = [
         {"path": "src/users.py", "line": 31, "kind": "py", "qualified_name": "users.validate"},
