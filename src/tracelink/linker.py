@@ -214,16 +214,22 @@ def candidates(text: str, symbols: Dict[str, str], min_len: int,
 # file anchors — notes that name a file, not a symbol
 # --------------------------------------------------------------------------- #
 
+#: One directory segment. Besides plain names, Next.js App Router paths are
+#: full of `(group)` and `[param]` segments — `(frontend)`, `[locale]`,
+#: `[slug]`, `[...catchall]` — so a WHOLE segment may be parenthesised or
+#: bracketed. Whole, deliberately: `(see infra/compose.yml` in prose must
+#: not swallow the punctuation into the path.
+_FILE_SEG = r"(?:\([\w.\-]+\)|\[[\w.\-]+\]|[\w.\-]+)"
 #: A path-shaped token whose LAST segment carries an extension: a word
 #: character, a dot, then the extension. `infra/docker/compose.yml`,
 #: `deploy-stage.sh`, `.env.example` — but not a bare dotfile like `.env`,
 #: which has no extension to speak of.
-_FILE_TOKEN = re.compile(r"(?:[\w.\-]+/)*[\w.\-]*\w\.[A-Za-z0-9][\w\-]*")
+_FILE_TOKEN = re.compile(rf"(?:{_FILE_SEG}/)*[\w.\-]*\w\.[A-Za-z0-9][\w\-]*")
 #: The same token bare in prose, requiring at least one `/`. The lookbehind
 #: refuses a match that starts mid-token — which also keeps URLs out, since
 #: `host.com/x.yml` always has a `.` or `/` right before any candidate start.
 _FILE_BARE = re.compile(
-    r"(?<![\w./\\-])((?:[\w.\-]+/)+[\w.\-]*\w\.[A-Za-z0-9][\w\-]*)")
+    rf"(?<![\w./\\-])((?:{_FILE_SEG}/)+[\w.\-]*\w\.[A-Za-z0-9][\w\-]*)")
 
 
 def _norm_ref(ref: str) -> str:

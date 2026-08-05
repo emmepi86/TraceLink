@@ -131,6 +131,45 @@ class BarePathsNeedASlash(_AnchorCase):
         self.assertNotIn("## Files", self.read("CODE-INDEX.md"))
 
 
+class NextJsRouteSegmentsAreValidPathComponents(_AnchorCase):
+    """Bug B (fix round 1): App Router paths carry `(group)` and `[param]`
+    segments — `(frontend)`, `[locale]`, `[slug]`, `[...catchall]` — and
+    the detection must not choke on them. The real TODI-7 citation is the
+    fixture."""
+
+    TODI7 = "app/src/app/(frontend)/[locale]/immobili/[slug]/page.module.css"
+
+    def test_the_real_todi7_path_anchors_from_backticks(self):
+        self.repo_file(self.TODI7, ".card { color: red }\n")
+        self.note("RES-01", f"the card layout is pinned in `{self.TODI7}`.")
+        r = self.link()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn(f"- {self.TODI7}", self.block("RES-01.md"))
+        self.assertIn("## Files", self.read("CODE-INDEX.md"))
+
+    def test_a_bracketed_path_resolves_bare_and_by_shorter_suffix(self):
+        self.repo_file(self.TODI7, ".card {}\n")
+        self.note("RES-01", "the layout lives in "
+                            "[slug]/page.module.css these days.")
+        self.link()
+        self.assertIn(f"- {self.TODI7}", self.block("RES-01.md"))
+
+    def test_a_catchall_segment_is_detected(self):
+        from tracelink.linker import file_refs
+        refs = [r for r, _w in file_refs("see `app/[...slug]/route.ts`.")]
+        self.assertEqual(refs, ["app/[...slug]/route.ts"])
+
+    def test_prose_parentheses_are_not_swallowed_into_the_path(self):
+        """`(see infra/compose.yml)` — the parenthesis is punctuation, not
+        a route group: the path inside must still resolve."""
+        self.repo_file("infra/compose.yml")
+        self.note("RES-01", "the ports drift (see infra/compose.yml) "
+                            "on stage.")
+        r = self.link()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("- infra/compose.yml", self.block("RES-01.md"))
+
+
 class SuffixMeansWholeComponents(_AnchorCase):
     def test_compose_prod_does_not_satisfy_the_compose_suffix(self):
         self.repo_file("infra/compose.yml")
