@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 400" width="760" height="400" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+  <style>
+    .bg    { fill: #0d1117; }
+    .chrome{ fill: #161b22; }
+    .dot1  { fill: #ff5f57; } .dot2 { fill: #febc2e; } .dot3 { fill: #28c840; }
+    text   { font-size: 13px; }
+    .dim   { fill: #6e7681; }
+    .cmd   { fill: #58a6ff; }
+    .ok    { fill: #3fb950; }
+    .out   { fill: #c9d1d9; }
+    .warn  { fill: #d29922; }
+    .mem   { fill: #bc8cff; }
+    .title { fill: #8b949e; font-size: 11px; letter-spacing: .08em; }
+
+    /* 3 screens, 15s loop, 5s each. */
+    .step { opacity: 0; animation: show 15s infinite; }
+    .s1 { animation-delay: 0s; }
+    .s2 { animation-delay: 5s; }
+    .s3 { animation-delay: 10s; }
+    @keyframes show {
+      0%   { opacity: 0 }
+      2%   { opacity: 1 }
+      30%  { opacity: 1 }
+      33%  { opacity: 0 }
+      100% { opacity: 0 }
+    }
+    .caret { animation: blink 1.05s steps(1) infinite; }
+    @keyframes blink { 50% { opacity: 0 } }
+  </style>
+
+  <rect class="bg" width="760" height="400" rx="10"/>
+  <rect class="chrome" width="760" height="34" rx="10"/>
+  <rect class="chrome" y="20" width="760" height="14"/>
+  <circle class="dot1" cx="22" cy="17" r="6"/>
+  <circle class="dot2" cx="42" cy="17" r="6"/>
+  <circle class="dot3" cx="62" cy="17" r="6"/>
+  <text class="title" x="380" y="21" text-anchor="middle">tracelink — the codebase warns the next agent</text>
+
+  <!-- Screen 1: an agent edits an infra file -->
+  <g class="step s1">
+    <text class="dim" x="24" y="70">1/3 · an AI agent edits a file the vault knows about</text>
+    <text class="out" x="24" y="104">● Edit(infra/docker/compose.yml)</text>
+    <text class="dim" x="24" y="128">  └ changed depends_on for service "web"</text>
+    <text class="mem" x="24" y="170">⚑ TraceLink — known findings about this file:</text>
+    <text class="out" x="24" y="196">  - OPS-9 [open/medium] one-shot migrate can wedge the web</text>
+    <text class="out" x="24" y="218">    container — file: infra/docker/compose.yml</text>
+    <text class="dim" x="24" y="244">  (full notes: .tracelink/vault/OPS-9.md — read before</text>
+    <text class="dim" x="24" y="264">   assuming this area is clean)</text>
+    <text class="ok" x="24" y="306">The agent reads the note — and does not repeat the incident.</text>
+    <text class="out" x="24" y="344">▍<tspan class="caret">█</tspan></text>
+  </g>
+
+  <!-- Screen 2: session end, capture -->
+  <g class="step s2">
+    <text class="dim" x="24" y="70">2/3 · the session edited code but recorded nothing</text>
+    <text class="out" x="24" y="104">⏹ agent attempts to stop…</text>
+    <text class="mem" x="24" y="140">⚑ TraceLink capture: append durable discoveries to</text>
+    <text class="mem" x="24" y="162">  FINDINGS.md — name the exact symbols and files.</text>
+    <text class="dim" x="24" y="184">  If nothing qualifies, append nothing and stop again.</text>
+    <text class="out" x="24" y="222">✎ appended: OPS-11 — every slideshow cover mounts eagerly,</text>
+    <text class="out" x="24" y="244">  tens of MB per kiosk boot (`MonitorSlideshow`)</text>
+    <text class="cmd" x="24" y="282">$ tracelink lint --new-only …</text>
+    <text class="ok" x="24" y="306">findings_checked: 1   warnings: 0 — the memory grew.</text>
+    <text class="out" x="24" y="344">▍<tspan class="caret">█</tspan></text>
+  </g>
+
+  <!-- Screen 3: the measured payoff -->
+  <g class="step s3">
+    <text class="dim" x="24" y="70">3/3 · measured on a production codebase, blind-judged</text>
+    <text class="out" x="24" y="106">Haiku,  no memory :  <tspan class="warn">FAIL — hallucinated a CLI command</tspan></text>
+    <text class="out" x="24" y="130">Sonnet, no memory :  <tspan class="warn">FAIL — prescribed the remedy that had failed</tspan></text>
+    <text class="out" x="24" y="154">Haiku,  with memory: <tspan class="ok">PASS — cited the note, exact remedy</tspan></text>
+    <text class="out" x="24" y="178">Sonnet, with memory: <tspan class="ok">PASS — cheapest correct run of the study</tspan></text>
+    <text class="mem" x="24" y="220">Memory closes the capability gap between models.</text>
+    <text class="dim" x="24" y="252">−32% tokens vs a frontier model without memory · files in,</text>
+    <text class="dim" x="24" y="272">files out · no network · docs/benchmarks/</text>
+    <text class="out" x="24" y="344">▍<tspan class="caret">█</tspan></text>
+  </g>
+</svg>

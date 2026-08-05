@@ -234,6 +234,30 @@ Capture prompts once per session: a fresh session (or `/clear`) re-arms it,
 while `--resume` deliberately keeps an already-spent prompt spent — resuming
 is the same working session, not a new chance to nag.
 
+### Measured, not claimed
+
+<p align="center">
+  <img src="docs/demo-memory.svg" alt="the consult hook warning an agent, the capture prompt, and the measured payoff" width="760">
+</p>
+
+We benchmarked the memory loop on a production codebase — 38 agent runs,
+3 real tasks with hidden traps, frozen criteria, blind judging. The
+headline: **memory closes the capability gap between models.** Without it,
+cheaper models fail with confident operational hallucinations (a CLI
+command that doesn't exist; "just restart" when the prompt said restarting
+had already failed). With it, every tier passed:
+
+| ops task (T3) | without memory | with memory |
+|---|---|---|
+| Opus | pass, at 1.3–2× the cost | pass |
+| Sonnet | **fail** | pass — cheapest correct run of the study |
+| Haiku | **fail** (hallucinated command) | pass, citing the note |
+
+Sonnet **with** memory beat Opus **without** it: −32% tokens, better
+correctness. On uncommented code — which is what vibe coding produces —
+memory saved ~25% of tokens even on the frontier model. Full methodology,
+numbers and stated limits: [docs/benchmarks/agent-memory-benchmark.md](docs/benchmarks/agent-memory-benchmark.md).
+
 ### Symbol backends
 
 Tried in order, first one that produces symbols wins. Force with `--backend`.
