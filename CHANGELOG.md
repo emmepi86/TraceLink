@@ -206,6 +206,28 @@
   Disagreement is never repaired: `link` relinks. A v4 state is not mined
   for its symbol map either — if the index is derivable, it is rebuilt from
   the source rather than trusted from a cache nobody checked.
+- **The repository walk happens when it is needed.** `link` built the
+  file-anchor map on every run, so a vault that anchors nothing to a path
+  still paid for the whole tree. It is now built on the first note that
+  names a file and never otherwise, with a sentinel test that replaces the
+  function with a counter and fails if it is entered. Resolution is
+  untouched: the map is still built in full, because a reference is
+  ambiguous when two files share its tail and a shortcut checking one
+  likely path would turn that into a confident wrong match. Measured on
+  50 000 files: a vault with no file references drops from 1.3 s to 0.31 s
+  of linker work; one reference costs the walk, and a hundred cost 7 % more
+  than one.
+- **Correction to the benchmark, not to the code.** The b02 page attributed
+  `link`'s floor to that walk. Timed properly, the floor at 50 000 files is
+  75 % hashing every indexed file to verify freshness, 14 % rebuilding the
+  fingerprint scope and 12 % the file map — the same run with
+  `--freshness ignore` takes 0.28 s instead of 5.78 s. The measurements
+  were right and the cause named beside them was wrong; it is recorded as
+  F2b and left unfixed, because the hash is what makes a freshness claim
+  evidence rather than an assumption.
+- Recorded, unfixed: an ambiguous *file* reference is reported on stdout and
+  in CODE-INDEX.md but leaves no record in the note's own state, so
+  `explain` cannot show it the way it shows an ambiguous symbol (F5).
 - **A test that the property stays true**: no shipped source assigns
   `sys.argv`, every `main()` leaves the process argv byte-for-byte intact,
   each module is callable in-process on its own, and an explicit empty

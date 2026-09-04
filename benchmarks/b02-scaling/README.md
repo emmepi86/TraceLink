@@ -100,6 +100,54 @@ is considered**. What the incremental skip can save is whatever is left:
 The 4–5× measured on small repositories is real there, and gone by 25 000
 files.
 
+### Correction: the floor is not the walk
+
+The measurements above stand; the cause named beside them did not. This
+page originally attributed the fixed cost to "the tree walk that resolves
+file anchors". Timed component by component at 50 000 files:
+
+| | s | share of the floor |
+|---|---:|---:|
+| hashing every indexed file (freshness) | 5.80 | **75 %** |
+| walking to rebuild the fingerprint scope | 1.12 | 14 % |
+| the file-anchor map | 0.98 | 12 % |
+
+The floor is dominated by **freshness verification** — proving the index
+still describes the repository means reading and hashing every file it
+indexed, on every run. The same run with `--freshness ignore` takes
+**0.28 s** instead of 5.78 s.
+
+That is a different problem from the one the paragraph above named, and it
+is recorded as **F2b** rather than quietly fixed: the hash is what makes a
+freshness claim evidence instead of an assumption, so making it cheaper is
+a design question, not an optimisation.
+
+### After ms-11d: the walk is demand-driven
+
+The file-anchor map is now built on the first note that names a path, and
+never otherwise — a sentinel test replaces `repo_file_map` with a counter
+and fails if it is entered. With freshness verification switched off, so
+that the term is visible at all:
+
+| Files | 0 file refs | 1 file ref | many file refs |
+|---:|---:|---:|---:|
+| 2 700 | 0.112 s | 0.115 s | 0.137 s |
+| 10 000 | 0.200 s | 0.353 s | 0.388 s |
+| 25 000 | 0.302 s | 0.775 s | 0.844 s |
+| 50 000 | **0.313 s** | **1.278 s** | 1.363 s |
+
+A vault that anchors nothing to a path no longer pays for the tree at all —
+what growth remains in that column is loading the symbol index, not walking
+the repository. One reference brings the walk back in full, and a hundred
+cost 7 % more than one: **the term is the walk, not the references**.
+
+So the unconditional O(files) is gone and a conditional one remains,
+recorded as the honest state of affairs rather than declared solved. Making
+*that* cheaper means an incremental file index — and a reference is
+ambiguous when two files share its tail, so any shortcut that checks one
+likely path instead of the whole map would turn an `AMBIGUOUS` into a
+confident `MATCH`. Slow is a worse tool; wrong is a different tool.
+
 **On noise:** with 0 notes there is nothing to skip, so full and
 incremental do identical work — the cells where they differ by up to 40 %
 are measuring the noise floor of a single run (roughly ±0.5 s at 10 000

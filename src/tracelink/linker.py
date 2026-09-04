@@ -273,6 +273,28 @@ def _manifest_register(vault: str) -> Optional[str]:
         return None
 
 
+class _DeferredFileMap:
+    """The repository file map, built on first use and then reused.
+
+    Same map, same walk, same exclusions — only the moment changes. A vault
+    whose notes name no path never triggers it, and a vault with one
+    reference pays exactly what it paid before.
+    """
+
+    __slots__ = ("_args", "_map", "walks")
+
+    def __init__(self, repo, vault, register):
+        self._args = (repo, vault, register)
+        self._map = None
+        self.walks = 0          # for tests: the walk must be provable
+
+    def get(self):
+        if self._map is None:
+            self._map = repo_file_map(*self._args)
+            self.walks += 1
+        return self._map
+
+
 def repo_file_map(repo: str, vault: Optional[str] = None,
                   register: Optional[str] = None) -> Dict[str, List[str]]:
     """basename -> sorted relative paths of every file a reference may
@@ -1115,9 +1137,20 @@ def main(argv=None, prog=None) -> int:
         return 1
 
     # File anchoring resolves against the real tree, so the map is built once
-    # per run, with the tool's own artifacts excluded at the source.
-    files_by_name = repo_file_map(args.repo, args.vault,
-                                  _manifest_register(args.vault))
+    # per run, with the tool's own artifacts excluded at the source — but
+    # only if some note actually names a file. On a large repository that
+    # walk was the floor of every run: 7 seconds at 50 000 files before a
+    # single note was considered, paid identically by vaults that anchor
+    # nothing to a path (benchmark 02, F2). It is work whose result nobody
+    # would read, and the cheapest work is the kind that does not happen.
+    #
+    # Deferred rather than guessed at: when a reference does appear the map
+    # is built in full, from the real tree, and resolution is unchanged. A
+    # reference is still ambiguous when the repository holds two files that
+    # match it, which is exactly what a shortcut checking one likely path
+    # would have turned into a confident wrong answer.
+    file_map = _DeferredFileMap(args.repo, args.vault,
+                                _manifest_register(args.vault))
 
     backward: Dict[str, List[str]] = collections.defaultdict(list)
     # (note, symbol) pairs per file, from links actually written. The rollup
@@ -1168,7 +1201,8 @@ def main(argv=None, prog=None) -> int:
         # input the content hash cannot see. See files_fingerprint for the
         # cost accounting.
         refs = file_refs(body)
-        outcomes = [(ref, resolve_file_ref(ref, files_by_name))
+        # `.get()` on the first reference in the whole run, never otherwise.
+        outcomes = [(ref, resolve_file_ref(ref, file_map.get()))
                     for ref, _why in refs]
         files_fp = files_fingerprint(outcomes)
         # Anchors and file ambiguities, derived from the outcomes for every
