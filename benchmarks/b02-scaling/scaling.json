@@ -1,0 +1,510 @@
+{
+  "f1": [
+    {
+      "config": {
+        "files": 700,
+        "notes": 100,
+        "label": "f1 symbols\u224814000",
+        "funcs": 20
+      },
+      "index_s": 0.4234,
+      "symbols": 14000,
+      "symbols_bytes": 2203467,
+      "notes_written": 100,
+      "split_s": 0.0213,
+      "link_full_s": 0.3776,
+      "link_incremental_s": 0.3228,
+      "state_bytes": 1383664,
+      "state_symbol_locations_bytes": 1302000,
+      "state_notes_bytes": 41300,
+      "state_parse_ms": 6.405,
+      "consult_file": {
+        "n": 100,
+        "p50_ms": 9.786,
+        "p95_ms": 12.963,
+        "max_ms": 26.661
+      },
+      "consult_symbol": {
+        "n": 100,
+        "p50_ms": 9.255,
+        "p95_ms": 11.389,
+        "max_ms": 16.58
+      },
+      "peak_rss_mb": 41.0
+    },
+    {
+      "config": {
+        "files": 2500,
+        "notes": 100,
+        "label": "f1 symbols\u224850000",
+        "funcs": 20
+      },
+      "index_s": 1.5903,
+      "symbols": 50000,
+      "symbols_bytes": 7862668,
+      "notes_written": 100,
+      "split_s": 0.0203,
+      "link_full_s": 1.1744,
+      "link_incremental_s": 1.2685,
+      "state_bytes": 4803664,
+      "state_symbol_locations_bytes": 4650000,
+      "state_notes_bytes": 41300,
+      "state_parse_ms": 33.138,
+      "consult_file": {
+        "n": 100,
+        "p50_ms": 43.066,
+        "p95_ms": 82.187,
+        "max_ms": 230.521
+      },
+      "consult_symbol": {
+        "n": 100,
+        "p50_ms": 38.475,
+        "p95_ms": 49.675,
+        "max_ms": 64.238
+      },
+      "peak_rss_mb": 103.4
+    },
+    {
+      "config": {
+        "files": 5000,
+        "notes": 100,
+        "label": "f1 symbols\u2248100000",
+        "funcs": 20
+      },
+      "index_s": 3.0282,
+      "symbols": 100000,
+      "symbols_bytes": 15722668,
+      "notes_written": 100,
+      "split_s": 0.0183,
+      "link_full_s": 2.4216,
+      "link_incremental_s": 2.4008,
+      "state_bytes": 9553664,
+      "state_symbol_locations_bytes": 9300000,
+      "state_notes_bytes": 41300,
+      "state_parse_ms": 87.038,
+      "consult_file": {
+        "n": 100,
+        "p50_ms": 88.825,
+        "p95_ms": 113.577,
+        "max_ms": 250.714
+      },
+      "consult_symbol": {
+        "n": 100,
+        "p50_ms": 94.982,
+        "p95_ms": 116.98,
+        "max_ms": 135.292
+      },
+      "peak_rss_mb": 190.5
+    },
+    {
+      "config": {
+        "files": 12500,
+        "notes": 100,
+        "label": "f1 symbols\u2248250000",
+        "funcs": 20
+      },
+      "index_s": 8.5722,
+      "symbols": 250000,
+      "symbols_bytes": 39302669,
+      "notes_written": 100,
+      "split_s": 0.0224,
+      "link_full_s": 6.1801,
+      "link_incremental_s": 10.2317,
+      "state_bytes": 23803664,
+      "state_symbol_locations_bytes": 23250000,
+      "state_notes_bytes": 41300,
+      "state_parse_ms": 290.666,
+      "consult_file": {
+        "n": 100,
+        "p50_ms": 306.599,
+        "p95_ms": 372.787,
+        "max_ms": 433.116
+      },
+      "consult_symbol": {
+        "n": 100,
+        "p50_ms": 308.768,
+        "p95_ms": 464.708,
+        "max_ms": 663.652
+      },
+      "peak_rss_mb": 434.6
+    },
+    {
+      "config": {
+        "files": 25000,
+        "notes": 100,
+        "label": "f1 symbols\u2248500000",
+        "funcs": 20
+      },
+      "index_s": 13.1894,
+      "symbols": 400000,
+      "symbols_bytes": 62882759,
+      "notes_written": 100,
+      "split_s": 0.0211,
+      "link_full_s": 17.9234,
+      "link_incremental_s": 15.0519,
+      "state_bytes": 38053664,
+      "state_symbol_locations_bytes": 37200000,
+      "state_notes_bytes": 41300,
+      "state_parse_ms": 526.945,
+      "consult_file": {
+        "n": 100,
+        "p50_ms": 547.74,
+        "p95_ms": 806.873,
+        "max_ms": 1100.175
+      },
+      "consult_symbol": {
+        "n": 100,
+        "p50_ms": 597.635,
+        "p95_ms": 760.705,
+        "max_ms": 912.544
+      },
+      "peak_rss_mb": 704.1
+    }
+  ],
+  "f2": [
+    {
+      "config": {
+        "files": 2700,
+        "notes": 0,
+        "label": "f2 files=2700 notes=0",
+        "funcs": 1
+      },
+      "index_s": 0.4772,
+      "symbols": 2700,
+      "symbols_bytes": 494068,
+      "notes_written": 0,
+      "split_s": 0.0042,
+      "link_full_s": 0.3749,
+      "link_incremental_s": 0.3597,
+      "state_bytes": 257074,
+      "state_symbol_locations_bytes": 251100,
+      "state_notes_bytes": 283,
+      "state_parse_ms": 1.163,
+      "consult_file": {},
+      "consult_symbol": {},
+      "peak_rss_mb": 22.6
+    },
+    {
+      "config": {
+        "files": 2700,
+        "notes": 100,
+        "label": "f2 files=2700 notes=100",
+        "funcs": 1
+      },
+      "index_s": 0.4649,
+      "symbols": 2700,
+      "symbols_bytes": 494068,
+      "notes_written": 100,
+      "split_s": 0.0171,
+      "link_full_s": 0.441,
+      "link_incremental_s": 0.3956,
+      "state_bytes": 310164,
+      "state_symbol_locations_bytes": 251100,
+      "state_notes_bytes": 41300,
+      "state_parse_ms": 1.447,
+      "consult_file": {
+        "n": 100,
+        "p50_ms": 2.801,
+        "p95_ms": 3.712,
+        "max_ms": 27.4
+      },
+      "consult_symbol": {
+        "n": 100,
+        "p50_ms": 2.679,
+        "p95_ms": 3.675,
+        "max_ms": 5.844
+      },
+      "peak_rss_mb": 23.7
+    },
+    {
+      "config": {
+        "files": 2700,
+        "notes": 1000,
+        "label": "f2 files=2700 notes=1000",
+        "funcs": 1
+      },
+      "index_s": 1.1427,
+      "symbols": 2700,
+      "symbols_bytes": 494068,
+      "notes_written": 1000,
+      "split_s": 0.2126,
+      "link_full_s": 1.4716,
+      "link_incremental_s": 0.7003,
+      "state_bytes": 790764,
+      "state_symbol_locations_bytes": 251100,
+      "state_notes_bytes": 413000,
+      "state_parse_ms": 4.85,
+      "consult_file": {
+        "n": 100,
+        "p50_ms": 15.269,
+        "p95_ms": 23.755,
+        "max_ms": 34.201
+      },
+      "consult_symbol": {
+        "n": 100,
+        "p50_ms": 15.926,
+        "p95_ms": 25.629,
+        "max_ms": 36.558
+      },
+      "peak_rss_mb": 30.6
+    },
+    {
+      "config": {
+        "files": 10000,
+        "notes": 0,
+        "label": "f2 files=10000 notes=0",
+        "funcs": 1
+      },
+      "index_s": 1.7643,
+      "symbols": 10000,
+      "symbols_bytes": 1822669,
+      "notes_written": 0,
+      "split_s": 0.0046,
+      "link_full_s": 1.4298,
+      "link_incremental_s": 1.9905,
+      "state_bytes": 950574,
+      "state_symbol_locations_bytes": 930000,
+      "state_notes_bytes": 283,
+      "state_parse_ms": 4.727,
+      "consult_file": {},
+      "consult_symbol": {},
+      "peak_rss_mb": 36.9
+    },
+    {
+      "config": {
+        "files": 10000,
+        "notes": 100,
+        "label": "f2 files=10000 notes=100",
+        "funcs": 1
+      },
+      "index_s": 1.8095,
+      "symbols": 10000,
+      "symbols_bytes": 1822669,
+      "notes_written": 100,
+      "split_s": 0.0192,
+      "link_full_s": 1.4432,
+      "link_incremental_s": 1.5619,
+      "state_bytes": 1003664,
+      "state_symbol_locations_bytes": 930000,
+      "state_notes_bytes": 41300,
+      "state_parse_ms": 5.313,
+      "consult_file": {
+        "n": 100,
+        "p50_ms": 7.132,
+        "p95_ms": 10.372,
+        "max_ms": 19.419
+      },
+      "consult_symbol": {
+        "n": 100,
+        "p50_ms": 6.75,
+        "p95_ms": 10.281,
+        "max_ms": 16.055
+      },
+      "peak_rss_mb": 37.9
+    },
+    {
+      "config": {
+        "files": 10000,
+        "notes": 1000,
+        "label": "f2 files=10000 notes=1000",
+        "funcs": 1
+      },
+      "index_s": 1.7515,
+      "symbols": 10000,
+      "symbols_bytes": 1822669,
+      "notes_written": 1000,
+      "split_s": 0.1752,
+      "link_full_s": 2.4967,
+      "link_incremental_s": 1.6035,
+      "state_bytes": 1484264,
+      "state_symbol_locations_bytes": 930000,
+      "state_notes_bytes": 413000,
+      "state_parse_ms": 10.966,
+      "consult_file": {
+        "n": 100,
+        "p50_ms": 18.529,
+        "p95_ms": 28.436,
+        "max_ms": 58.23
+      },
+      "consult_symbol": {
+        "n": 100,
+        "p50_ms": 19.279,
+        "p95_ms": 29.784,
+        "max_ms": 32.126
+      },
+      "peak_rss_mb": 45.4
+    },
+    {
+      "config": {
+        "files": 25000,
+        "notes": 0,
+        "label": "f2 files=25000 notes=0",
+        "funcs": 1
+      },
+      "index_s": 3.5297,
+      "symbols": 20000,
+      "symbols_bytes": 3642759,
+      "notes_written": 0,
+      "split_s": 0.0042,
+      "link_full_s": 3.3692,
+      "link_incremental_s": 3.3388,
+      "state_bytes": 1900574,
+      "state_symbol_locations_bytes": 1860000,
+      "state_notes_bytes": 283,
+      "state_parse_ms": 8.497,
+      "consult_file": {},
+      "consult_symbol": {},
+      "peak_rss_mb": 57.4
+    },
+    {
+      "config": {
+        "files": 25000,
+        "notes": 100,
+        "label": "f2 files=25000 notes=100",
+        "funcs": 1
+      },
+      "index_s": 3.7301,
+      "symbols": 20000,
+      "symbols_bytes": 3642759,
+      "notes_written": 100,
+      "split_s": 0.0222,
+      "link_full_s": 4.2995,
+      "link_incremental_s": 3.6802,
+      "state_bytes": 1953664,
+      "state_symbol_locations_bytes": 1860000,
+      "state_notes_bytes": 41300,
+      "state_parse_ms": 8.912,
+      "consult_file": {
+        "n": 100,
+        "p50_ms": 11.786,
+        "p95_ms": 17.024,
+        "max_ms": 18.594
+      },
+      "consult_symbol": {
+        "n": 100,
+        "p50_ms": 12.456,
+        "p95_ms": 14.477,
+        "max_ms": 22.946
+      },
+      "peak_rss_mb": 59.8
+    },
+    {
+      "config": {
+        "files": 25000,
+        "notes": 1000,
+        "label": "f2 files=25000 notes=1000",
+        "funcs": 1
+      },
+      "index_s": 3.3384,
+      "symbols": 20000,
+      "symbols_bytes": 3642759,
+      "notes_written": 1000,
+      "split_s": 0.1966,
+      "link_full_s": 4.1418,
+      "link_incremental_s": 3.6796,
+      "state_bytes": 2434264,
+      "state_symbol_locations_bytes": 1860000,
+      "state_notes_bytes": 413000,
+      "state_parse_ms": 14.515,
+      "consult_file": {
+        "n": 100,
+        "p50_ms": 23.561,
+        "p95_ms": 30.164,
+        "max_ms": 34.315
+      },
+      "consult_symbol": {
+        "n": 100,
+        "p50_ms": 26.182,
+        "p95_ms": 44.244,
+        "max_ms": 62.17
+      },
+      "peak_rss_mb": 67.4
+    },
+    {
+      "config": {
+        "files": 50000,
+        "notes": 0,
+        "label": "f2 files=50000 notes=0",
+        "funcs": 1
+      },
+      "index_s": 3.2211,
+      "symbols": 20000,
+      "symbols_bytes": 3642759,
+      "notes_written": 0,
+      "split_s": 0.0041,
+      "link_full_s": 7.059,
+      "link_incremental_s": 6.3312,
+      "state_bytes": 1900574,
+      "state_symbol_locations_bytes": 1860000,
+      "state_notes_bytes": 283,
+      "state_parse_ms": 7.827,
+      "consult_file": {},
+      "consult_symbol": {},
+      "peak_rss_mb": 65.6
+    },
+    {
+      "config": {
+        "files": 50000,
+        "notes": 100,
+        "label": "f2 files=50000 notes=100",
+        "funcs": 1
+      },
+      "index_s": 3.507,
+      "symbols": 20000,
+      "symbols_bytes": 3642759,
+      "notes_written": 100,
+      "split_s": 0.0216,
+      "link_full_s": 7.2554,
+      "link_incremental_s": 8.742,
+      "state_bytes": 1953664,
+      "state_symbol_locations_bytes": 1860000,
+      "state_notes_bytes": 41300,
+      "state_parse_ms": 10.842,
+      "consult_file": {
+        "n": 100,
+        "p50_ms": 13.429,
+        "p95_ms": 23.0,
+        "max_ms": 47.405
+      },
+      "consult_symbol": {
+        "n": 100,
+        "p50_ms": 13.055,
+        "p95_ms": 39.995,
+        "max_ms": 133.009
+      },
+      "peak_rss_mb": 66.7
+    },
+    {
+      "config": {
+        "files": 50000,
+        "notes": 1000,
+        "label": "f2 files=50000 notes=1000",
+        "funcs": 1
+      },
+      "index_s": 3.9214,
+      "symbols": 20000,
+      "symbols_bytes": 3642759,
+      "notes_written": 1000,
+      "split_s": 0.244,
+      "link_full_s": 7.9297,
+      "link_incremental_s": 6.95,
+      "state_bytes": 2434264,
+      "state_symbol_locations_bytes": 1860000,
+      "state_notes_bytes": 413000,
+      "state_parse_ms": 15.417,
+      "consult_file": {
+        "n": 100,
+        "p50_ms": 26.991,
+        "p95_ms": 51.223,
+        "max_ms": 72.11
+      },
+      "consult_symbol": {
+        "n": 100,
+        "p50_ms": 24.348,
+        "p95_ms": 33.921,
+        "max_ms": 48.703
+      },
+      "peak_rss_mb": 73.4
+    }
+  ]
+}
