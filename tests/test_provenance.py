@@ -263,6 +263,23 @@ class TheVocabularyIsReached(unittest.TestCase):
             self.assertEqual(2, len(entry["ambiguous"][0]["candidates"]))
             self.record(state)
 
+    def test_an_ambiguous_file_reference_is_recorded_like_a_symbol(self):
+        """ms-11f: the refusal has to be findable, not only printed."""
+        files = dict(TWO_FILES)
+        files["a/docker/compose.yml"] = "services: {}\n"
+        files["b/docker/compose.yml"] = "services: {}\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            _p, _v, state = build(tmp, files,
+                                  finding("`docker/compose.yml` drifts."))
+            item = state["notes"]["RES-01.md"]["ambiguous"][0]
+            self.assertEqual("file", item["kind"])
+            self.assertEqual("file-suffix-ambiguous", item["reason"])
+            self.assertEqual("ambiguous", RESOLUTION[item["reason"]][0])
+            self.assertEqual(2, len(item["candidates"]))
+            self.assertEqual([["file_reference_in_note",
+                               "docker/compose.yml"]], item["basis"])
+            self.record(state)
+
     def test_conflicting_evidence_is_a_conflict_not_a_choice(self):
         with tempfile.TemporaryDirectory() as tmp:
             _p, _v, state = build(

@@ -150,13 +150,12 @@ class ResolutionIsUnchanged(unittest.TestCase):
             entry = project.state()["notes"]["W-03.md"]
             self.assertEqual([], entry["files"], "an ambiguity became a match")
             self.assertIn("AMBIGUOUS docker/compose.yml", buffer.getvalue())
-            # Recorded here as it is, not as it should be: a file ambiguity
-            # is reported on stdout and in CODE-INDEX.md but leaves no trace
-            # in the note's own state, so `explain` cannot show it the way it
-            # shows an ambiguous symbol. Found while writing this test,
-            # registered as F5, and out of scope for a ministep about when
-            # the walk happens.
-            self.assertEqual([], entry["ambiguous"])
+            # Since ms-11f the refusal is also recorded where a reader can
+            # ask about it, the same way an ambiguous symbol is.
+            item = entry["ambiguous"][0]
+            self.assertEqual("file", item["kind"])
+            self.assertEqual("docker/compose.yml", item["name"])
+            self.assertEqual(2, len(item["candidates"]))
 
     def test_a_new_file_that_creates_an_ambiguity_invalidates_the_skip(self):
         """The file map is an input the content hash cannot see, so a note
@@ -176,6 +175,7 @@ class ResolutionIsUnchanged(unittest.TestCase):
             entry = project.state()["notes"]["W-03.md"]
             self.assertEqual([], entry["files"],
                              "the anchor survived a new ambiguity")
+            self.assertEqual("file", entry["ambiguous"][0]["kind"])
 
     def test_a_deleted_file_removes_the_anchor(self):
         with tempfile.TemporaryDirectory() as tmp:

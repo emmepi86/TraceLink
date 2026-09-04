@@ -755,6 +755,8 @@ def load_state(path: str) -> Optional[dict]:
                 return None
             if not isinstance(item.get("name"), str):
                 return None
+            if item.get("kind") not in ("symbol", "file"):
+                return None
             if not _valid_basis(item.get("basis")):
                 return None
             if not _valid_unresolved(item.get("reason"),
@@ -1224,7 +1226,14 @@ def main(argv=None, prog=None) -> int:
                 if matches[0] not in resolved_files:
                     resolved_files.append(matches[0])
             elif len(matches) > 1:
-                note_file_ambiguous.append((ref, matches))
+                # Recorded in the note's own state, the same shape a symbol
+                # ambiguity gets. A refusal that is only printed is a
+                # refusal nobody can ask about afterwards.
+                note_file_ambiguous.append({
+                    "kind": "file", "name": ref,
+                    "reason": "file-suffix-ambiguous",
+                    "candidates": list(matches),
+                    "basis": [["file_reference_in_note", ref]]})
 
         # The skip decision. Default is to relink; every clause below is a
         # positive proof that relinking would reproduce the file byte for
@@ -1251,7 +1260,12 @@ def main(argv=None, prog=None) -> int:
             # ambiguous name IS mentioned, so a change to its locations
             # trips `mention_pat` and forces the relink above). Under that
             # proof, re-running disambiguation would reproduce this list.
-            note_ambiguous = [dict(a) for a in entry["ambiguous"]]
+            # Symbol ambiguities come from the cache; file ambiguities are
+            # recomputed every run from today's tree (the file map is an
+            # input the content hash cannot see), so the cached ones would
+            # be duplicates.
+            note_ambiguous = [dict(a) for a in entry["ambiguous"]
+                              if a.get("kind") != "file"]
             # Provenance is cached with the links it explains, under the same
             # proof: recomputing it would reproduce these exact reasons.
             note_provenance = [dict(pr) for pr in entry["provenance"]]
@@ -1263,7 +1277,7 @@ def main(argv=None, prog=None) -> int:
                                                overrides)
                 if loc is None:
                     note_ambiguous.append({
-                        "name": sym, "reason": how,
+                        "kind": "symbol", "name": sym, "reason": how,
                         "candidates": [fmt(l) for l in symbols[sym]],
                         "basis": basis})
                     continue
@@ -1283,7 +1297,7 @@ def main(argv=None, prog=None) -> int:
             "files": list(note_files),
             "files_fingerprint": files_fp,
             "provenance": note_provenance,
-            "ambiguous": note_ambiguous}
+            "ambiguous": note_ambiguous + note_file_ambiguous}
         if not links and not note_files:
             # Distinguish the causes rather than reporting a single count.
             known = [w for w in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", body)
@@ -1300,7 +1314,8 @@ def main(argv=None, prog=None) -> int:
             print(f"AMBIGUOUS {item['name']} in {name} ({item['reason']})")
             for where in item["candidates"]:
                 print(f"  - {where}")
-        for ref, matches in note_file_ambiguous:
+        for item in note_file_ambiguous:
+            ref, matches = item["name"], item["candidates"]
             ambiguous_files[ref].append(os.path.splitext(name)[0])
             ambiguous_file_candidates[ref] = matches
             print(f"AMBIGUOUS {ref} in {name} (file-suffix)")

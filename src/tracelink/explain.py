@@ -61,10 +61,11 @@ class Link:
 class Unresolved:
     """One name the resolver refused to link, and what it could have meant."""
 
-    __slots__ = ("name", "state", "reason", "candidates", "basis")
+    __slots__ = ("name", "kind", "state", "reason", "candidates", "basis")
 
-    def __init__(self, name, reason, candidates=(), basis=()):
+    def __init__(self, name, reason, candidates=(), basis=(), kind="symbol"):
         self.name = name
+        self.kind = kind
         self.reason = reason
         self.state = _consult.RESOLUTION.get(reason, ("ambiguous", None))[0]
         self.candidates = tuple(candidates)
@@ -128,7 +129,8 @@ def explain(project, finding_id, vault=None):
         if isinstance(item, dict) and isinstance(item.get("name"), str):
             unresolved.append(Unresolved(item["name"], item.get("reason"),
                                          item.get("candidates") or (),
-                                         item.get("basis") or ()))
+                                         item.get("basis") or (),
+                                         item.get("kind") or "symbol"))
 
     files = [f for f in (entry.get("files") or []) if isinstance(f, str)]
     return Explanation(note_id, note_file, status, severity, title,
@@ -150,8 +152,8 @@ def as_json(explanation, debug=False):
                    "method": "file_anchor",
                    "basis": [{"kind": "file_named_in_note", "value": path}]}
                   for path in explanation.files],
-        "unresolved": [{"name": item.name, "state": item.state,
-                        "method": None,
+        "unresolved": [{"name": item.name, "kind": item.kind,
+                        "state": item.state, "method": None,
                         "candidates": list(item.candidates),
                         "basis": [{"kind": kind, "value": value}
                                   for kind, value in item.basis]}
@@ -200,9 +202,14 @@ def render_text(explanation):
 
     for item in explanation.unresolved:
         lines.append(item.state.upper())
-        lines.append(f"  the finding names `{item.name}`")
+        noun = "the file" if item.kind == "file" else ""
+        lines.append(f"  the finding names {noun} `{item.name}`".replace(
+            "names  ", "names "))
         for kind, value in item.basis:
-            lines.append(f"    {_phrase(kind, value)}")
+            # The line above already said which name it was; repeating it as
+            # evidence would be padding, not provenance.
+            if value != item.name:
+                lines.append(f"    {_phrase(kind, value)}")
         if item.candidates:
             lines.append("")
             lines.append("  Candidates:")
@@ -228,6 +235,8 @@ def _phrase(kind, value):
         return f"that prefix matched exactly one path, `{value}`"
     if kind == "frontmatter_override":
         return f"the note's frontmatter pins it to `{value}`"
+    if kind == "file_reference_in_note":
+        return f"the finding writes the path `{value}`"
     if kind == "file_named_in_note":
         return f"the finding names the file `{value}`"
     return f"{kind}: {value}"

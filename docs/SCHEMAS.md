@@ -81,7 +81,7 @@ Two files, split by owner rather than by size:
 
 | file | written by | read by | holds |
 |---|---|---|---|
-| `.tracelink-link-state.json` (schema **5**) | `link` | `consult`, `explain`, `status` | the knowledge `link` compiled |
+| `.tracelink-link-state.json` (schema **6**) | `link` | `consult`, `explain`, `status` | the knowledge `link` compiled |
 | `.tracelink-symbol-state.json` (schema **1**) | `link` | `link` | its own cache of the index it consumed |
 
 Delete either and nothing is lost but time.
@@ -102,7 +102,7 @@ going quiet because the index moved half a step ahead.
 
 ```json
 {
-  "schema_version": 4,
+  "schema_version": 6,
   "symbols_fingerprint": "sha256:…",
   "options_fingerprint": "sha256:…",
   "symbol_locations": {"validate": "sha256:…"},
@@ -118,9 +118,13 @@ going quiet because the index moved half a step ahead.
       "files": ["infra/docker/compose.yml"],
       "files_fingerprint": "sha256:…",
       "ambiguous": [
-        {"name": "validate", "reason": "ambiguous",
+        {"kind": "symbol", "name": "validate", "reason": "ambiguous",
          "candidates": ["src/users.py:L3", "src/payments.py:L7"],
-         "basis": []}
+         "basis": []},
+        {"kind": "file", "name": "docker/compose.yml",
+         "reason": "file-suffix-ambiguous",
+         "candidates": ["a/docker/compose.yml", "b/docker/compose.yml"],
+         "basis": [["file_reference_in_note", "docker/compose.yml"]]}
       ]
     }
   }

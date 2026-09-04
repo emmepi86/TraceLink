@@ -247,6 +247,16 @@
   parametrically rather than command by command. The message is not lost,
   only moved: stderr keeps the sentence, and the document carries
   `exit_reason: no-notes`.
+- **A refusal to anchor a file is recorded, not just printed.** An
+  ambiguous *symbol* has always been kept in the note's own state, so
+  `explain` can show what it could have meant and say *no link was
+  asserted*. An ambiguous *file reference* was printed to stdout and written
+  into CODE-INDEX.md and then forgotten — the same refusal, invisible to
+  anyone who asked afterwards. Both now live in the same list with a `kind`,
+  carrying their candidates and the reference that produced them, and
+  `explain` renders them identically. Found while writing the ms-11d tests
+  and fixed in its own step, because it changes the state schema (5 → 6) and
+  the published vocabulary rather than the timing of a walk.
 - **A test that the property stays true**: no shipped source assigns
   `sys.argv`, every `main()` leaves the process argv byte-for-byte intact,
   each module is callable in-process on its own, and an explicit empty

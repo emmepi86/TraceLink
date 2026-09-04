@@ -43,13 +43,18 @@ STATE_FILE = ".tracelink-link-state.json"
 #: v4 (0.9) records, next to each link, the reason it was made and the
 #: evidence behind it, and gives each ambiguous name its candidate list.
 #:
+#: v6 (0.9) records an ambiguous FILE reference the way an ambiguous symbol
+#: has always been recorded. Before it, a file reference matching two files
+#: was printed and forgotten: `explain` could not show it, so a refusal to
+#: anchor left no trace anywhere a reader would look.
+#:
 #: v5 (0.9) moved the linker's own cache of the symbol index OUT of this
 #: file. It was 94–98% of it, this module never read a byte of it, and the
 #: per-edit cost was almost entirely parsing it: 9.8ms at 14k symbols,
 #: 548ms at 400k, for a vault that never changed. What is left here is the
 #: knowledge `link` compiled — which is all `consult` and `explain` need,
 #: and all they are allowed to know about.
-STATE_SCHEMA = 5
+STATE_SCHEMA = 6
 
 #: How many notes a consult shows before deferring to CODE-INDEX.md.
 MAX_NOTES = 5
@@ -118,6 +123,8 @@ RESOLUTION = {
     "dotted-ambiguous": ("ambiguous", None),
     "multiple-qualified-names": ("ambiguous", None),
     "multiple-paths-in-note": ("ambiguous", None),
+    # a file reference that names more than one file in the tree
+    "file-suffix-ambiguous": ("ambiguous", None),
     # the note's own evidence disagrees with itself, or matches nothing
     "qualified-name-and-path-disagree": ("conflict", None),
     "dotted-and-path-disagree": ("conflict", None),
@@ -136,7 +143,7 @@ PUBLIC_METHODS = ("explicit_override", "sole_candidate", "qualified_symbol",
 #: The published kinds of evidence a basis entry can carry.
 BASIS_KINDS = ("frontmatter_override", "sole_candidate",
                "qualified_name_in_note", "path_in_note", "dotted_reference",
-               "path_suffix_match")
+               "path_suffix_match", "file_reference_in_note")
 
 #: Version of the `--json` document. Independent of the sidecar's internal
 #: `schema_version`: the protocol we publish and the algorithm that produces
