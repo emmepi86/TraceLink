@@ -1,0 +1,370 @@
+{
+  "target": "frappe/erpnext (shallow HEAD)",
+  "authored": "from the project's public PR history; no TraceLink output was consulted",
+  "findings": [
+    {
+      "finding_id": "ERP-001",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "inspect_and_set_status"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 57097",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ERP-002",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "get_uom_conv_factor"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 58305",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ERP-003",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "get_next_stock_reco"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 58309",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ERP-004",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "update_billed_amount_based_on_po"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 58021",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ERP-005",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "convert_mt940_to_csv"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 57382",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ERP-006",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "get_items_with_location_and_quantity"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 58613",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ERP-007",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "make_semi_fg_work_order"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 58382",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ERP-008",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "import_to_delete_template_method"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 58300",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ERP-009",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "FIFOSlots"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 54919",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ERP-010",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "_sub_assembly_rm_query"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 56090",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ERP-011",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "file",
+            "path": "erpnext/manufacturing/report/bom_explorer/bom_explorer.py"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 58007 / 57963",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true,
+        "corrected_after_review": true,
+        "correction": "the gold expected a symbol anchor on get_exploded_items because the PR's diff hunk header named it. At HEAD that name is defined in three OTHER files and not in the report the finding cites, so the symbol is genuinely ambiguous and unresolvable by the cited path. TraceLink refused it and anchored the file the author named \u2014 which is what the author wrote. The extraction method was wrong, not the tool: a hunk header names the enclosing or called function, which need not live in the changed file."
+      }
+    },
+    {
+      "finding_id": "ERP-012",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "get_valuation_rate"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 56361",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ERP-013",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "get_status"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 58246 (revert of 55641)",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ERP-014",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "validate_uom"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 58299",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ERP-015",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "file",
+            "path": "erpnext/accounts/doctype/accounts_settings/accounts_settings.py"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 56417",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ERP-016",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "file",
+            "path": "erpnext/controllers/budget_controller.py"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 56215",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ERP-017",
+      "expected": {
+        "state": "ambiguous",
+        "names": [
+          "execute"
+        ]
+      },
+      "review": {
+        "source": "PR 52964",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ERP-018",
+      "expected": {
+        "state": "ambiguous",
+        "names": [
+          "get_columns"
+        ]
+      },
+      "review": {
+        "source": "structural observation",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ERP-019",
+      "expected": {
+        "state": "no-assertion"
+      },
+      "review": {
+        "source": "PR 48715",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ERP-020",
+      "expected": {
+        "state": "no-assertion"
+      },
+      "review": {
+        "source": "project process",
+        "category": "domain-rule",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    }
+  ]
+}

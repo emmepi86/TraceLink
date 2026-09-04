@@ -1,0 +1,467 @@
+{
+  "counts": {
+    "correct match": 16,
+    "correct ambiguity": 2,
+    "correct no-assertion": 2
+  },
+  "rows": [
+    {
+      "finding_id": "ERP-001",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "inspect_and_set_status"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "inspect_and_set_status"
+        ],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    },
+    {
+      "finding_id": "ERP-002",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "get_uom_conv_factor"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "get_uom_conv_factor"
+        ],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    },
+    {
+      "finding_id": "ERP-003",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "get_next_stock_reco"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "get_next_stock_reco"
+        ],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    },
+    {
+      "finding_id": "ERP-004",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "update_billed_amount_based_on_po"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "update_billed_amount_based_on_po"
+        ],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    },
+    {
+      "finding_id": "ERP-005",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "convert_mt940_to_csv"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "convert_mt940_to_csv"
+        ],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    },
+    {
+      "finding_id": "ERP-006",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "get_items_with_location_and_quantity"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "get_items_with_location_and_quantity"
+        ],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    },
+    {
+      "finding_id": "ERP-007",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "make_semi_fg_work_order"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "make_semi_fg_work_order"
+        ],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    },
+    {
+      "finding_id": "ERP-008",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "import_to_delete_template_method"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "import_to_delete_template_method"
+        ],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    },
+    {
+      "finding_id": "ERP-009",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "FIFOSlots"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "FIFOSlots"
+        ],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    },
+    {
+      "finding_id": "ERP-010",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "_sub_assembly_rm_query"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "_sub_assembly_rm_query"
+        ],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    },
+    {
+      "finding_id": "ERP-011",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "file",
+            "path": "erpnext/manufacturing/report/bom_explorer/bom_explorer.py"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [],
+        "files": [
+          "erpnext/manufacturing/report/bom_explorer/bom_explorer.py"
+        ],
+        "ambiguous": [
+          "get_exploded_items"
+        ]
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    },
+    {
+      "finding_id": "ERP-012",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "get_valuation_rate"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "get_valuation_rate"
+        ],
+        "files": [
+          "erpnext/stock/stock_ledger.py"
+        ],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    },
+    {
+      "finding_id": "ERP-013",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "get_status"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "get_status"
+        ],
+        "files": [
+          "erpnext/manufacturing/doctype/work_order/work_order.py"
+        ],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    },
+    {
+      "finding_id": "ERP-014",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "validate_uom"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "validate_uom"
+        ],
+        "files": [
+          "erpnext/stock/doctype/item/item.py"
+        ],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    },
+    {
+      "finding_id": "ERP-015",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "file",
+            "path": "erpnext/accounts/doctype/accounts_settings/accounts_settings.py"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [],
+        "files": [
+          "erpnext/accounts/doctype/accounts_settings/accounts_settings.py"
+        ],
+        "ambiguous": [
+          "Account"
+        ]
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    },
+    {
+      "finding_id": "ERP-016",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "file",
+            "path": "erpnext/controllers/budget_controller.py"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [],
+        "files": [
+          "erpnext/controllers/budget_controller.py"
+        ],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    },
+    {
+      "finding_id": "ERP-017",
+      "outcome": "correct ambiguity",
+      "expected": {
+        "state": "ambiguous",
+        "names": [
+          "execute"
+        ]
+      },
+      "actual": {
+        "state": "ambiguous",
+        "symbols": [],
+        "files": [],
+        "ambiguous": [
+          "execute"
+        ]
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    },
+    {
+      "finding_id": "ERP-018",
+      "outcome": "correct ambiguity",
+      "expected": {
+        "state": "ambiguous",
+        "names": [
+          "get_columns"
+        ]
+      },
+      "actual": {
+        "state": "ambiguous",
+        "symbols": [],
+        "files": [],
+        "ambiguous": [
+          "get_columns"
+        ]
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    },
+    {
+      "finding_id": "ERP-019",
+      "outcome": "correct no-assertion",
+      "expected": {
+        "state": "no-assertion"
+      },
+      "actual": {
+        "state": "no-assertion",
+        "symbols": [],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    },
+    {
+      "finding_id": "ERP-020",
+      "outcome": "correct no-assertion",
+      "expected": {
+        "state": "no-assertion"
+      },
+      "actual": {
+        "state": "no-assertion",
+        "symbols": [],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "domain-rule"
+    }
+  ],
+  "false_authoritative_assertions": 0,
+  "recovered": 16,
+  "resolvable": 16,
+  "by_category": {
+    "domain-rule": {
+      "correct match": 16,
+      "correct ambiguity": 2,
+      "correct no-assertion": 2
+    }
+  }
+}
