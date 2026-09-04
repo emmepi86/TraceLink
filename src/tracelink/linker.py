@@ -1133,7 +1133,16 @@ def main(argv=None, prog=None) -> int:
     if skipped:
         print(f"warning: skipped {skipped} markdown file(s) without tracelink_schema")
     if not notes:
-        print(f"no notes in {args.vault}")
+        # The machine-readable promise holds on this path too: a CI job
+        # asking for JSON and receiving a sentence has been handed something
+        # it cannot act on. The words are not lost, only moved to stderr.
+        if args.format == "json":
+            print(json.dumps({"ok": False, "exit_reason": "no-notes",
+                              "freshness": None, "linking": None,
+                              "unlinked_notes": []}, indent=1))
+            print(f"no notes in {args.vault}", file=sys.stderr)
+        else:
+            print(f"no notes in {args.vault}")
         return 1
 
     # File anchoring resolves against the real tree, so the map is built once

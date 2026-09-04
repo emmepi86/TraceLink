@@ -202,6 +202,36 @@ def _line_number(value):
     return line if line > 0 else None
 
 
+#: Node types a backend uses for prose rather than for code. Graphify marks
+#: module and function docstrings `rationale`, and 3531 of 11911 nodes in
+#: one real graph were exactly that: sentences ingested as symbol names.
+#: The backend's own type is the authority here — inferring "this looks like
+#: a docstring" from the string would be a heuristic, and this is a fact the
+#: producer already recorded.
+_PROSE_NODE_TYPES = frozenset({"rationale", "doc", "docstring", "comment",
+                               "text", "prose"})
+
+#: The lexical backstop, for backends that type nothing. An identifier does
+#: not contain whitespace and is not a paragraph. Deliberately loose about
+#: everything else: `operator<<`, `foo?`, `$scope` and `Class::method` are
+#: identifiers in some language, and a filter that only admits `\w+` would
+#: quietly drop them.
+_MAX_IDENTIFIER = 128
+
+
+def looks_like_identifier(name):
+    """Could this be the name of something, in any language?
+
+    Two rules, both structural. Whitespace: no language writes a definition
+    whose name contains a space or a newline outside quotes, and no backend
+    here emits quoted names. Length: 128 characters is far past the longest
+    identifier anyone has written on purpose and far short of a sentence.
+    """
+    if not name or len(name) > _MAX_IDENTIFIER:
+        return False
+    return not any(ch.isspace() for ch in name)
+
+
 def _add(out, name, path, line, kind, qualified):
     """Record EVERY definition of a name, not just the first.
 
@@ -211,11 +241,16 @@ def _add(out, name, path, line, kind, qualified):
     filesystem order and came with no warning. Ambiguity is now data, and the
     linker refuses to guess.
     """
+    if not looks_like_identifier(name):
+        # Whatever this is, it is not the name of something a finding can
+        # name. The caller counts the refusals and says how many.
+        return False
     loc = {"path": path, "line": _line_number(line),
            "kind": kind or "", "qualified_name": qualified}
     bucket = out.setdefault(name, [])
     if not any(b["path"] == loc["path"] and b["line"] == loc["line"] for b in bucket):
         bucket.append(loc)
+    return True
 
 
 #: Keys a backend artefact may use to say which repository state it was
@@ -291,6 +326,7 @@ def from_graphify(repo: str) -> Tuple[Dict[str, str], Optional[str]]:
 
     out: Dict[str, str] = {}
     considered = set()
+    skipped_prose = skipped_labels = 0
     for n in nodes:
         if not isinstance(n, dict):
             continue
@@ -305,15 +341,31 @@ def from_graphify(repo: str) -> Tuple[Dict[str, str], Optional[str]]:
         loc = n.get("source_location") or n.get("line")
         if not src:
             continue
+        if str(n.get("file_type") or "").lower() in _PROSE_NODE_TYPES:
+            # A docstring is not a symbol. The producer said so; believe it.
+            skipped_prose += 1
+            continue
         # `norm_label` is the only qualifying hint graphify exposes; when it
         # adds nothing, record None rather than repeating the bare name and
         # calling it qualified.
         norm = (n.get("norm_label") or "").strip()
         qualified = norm if norm and norm != label and "." in norm else None
-        _add(out, label, str(src), loc, n.get("file_type") or "", qualified)
+        if not _add(out, label, str(src), loc, n.get("file_type") or "",
+                    qualified):
+            skipped_labels += 1
+            continue
         considered.add(str(src))
     graph_meta = data.get("graph") if isinstance(data.get("graph"), dict) else {}
-    return out, None, sorted(considered), _artifact_provenance(path, graph_meta)
+    note = None
+    if skipped_prose or skipped_labels:
+        parts = []
+        if skipped_prose:
+            parts.append(f"{skipped_prose} prose node(s) the graph itself "
+                         f"types as documentation")
+        if skipped_labels:
+            parts.append(f"{skipped_labels} label(s) that are not identifiers")
+        note = "ignored " + " and ".join(parts)
+    return out, note, sorted(considered), _artifact_provenance(path, graph_meta)
 
 
 # --------------------------------------------------------------------------- #

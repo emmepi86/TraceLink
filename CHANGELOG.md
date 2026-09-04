@@ -228,6 +228,25 @@
 - Recorded, unfixed: an ambiguous *file* reference is reported on stdout and
   in CODE-INDEX.md but leaves no record in the note's own state, so
   `explain` cannot show it the way it shows an ambiguous symbol (F5).
+- **A docstring is not a symbol.** One graph backend emitted module and
+  function docstrings as symbol names — 3 531 of 11 911 nodes in a real
+  graph were sentences. The fix uses the fact the producer already
+  recorded: those nodes carry `file_type: rationale`, so they are skipped by
+  *type* rather than by guessing at the string. A lexical backstop covers
+  backends that type nothing — an identifier has no whitespace and is not a
+  paragraph — and is deliberately loose about everything else, because
+  `operator<<`, `foo?` and `Class::method` are identifiers in some language
+  and a filter admitting only `\w+` would quietly drop them. The count of
+  what was ignored is reported, not silent.
+- **`--json` means one JSON document on stdout, from every command.** ms-4
+  fixed this for `consult`; writing the ms-10 fixtures found `link --format
+  json` printing `no notes in <path>` as prose on an empty vault — the rule
+  had been applied where it was written rather than everywhere it was
+  promised. It now holds on the success path and on the failure paths of
+  every command that offers a machine-readable mode, which is asserted
+  parametrically rather than command by command. The message is not lost,
+  only moved: stderr keeps the sentence, and the document carries
+  `exit_reason: no-notes`.
 - **A test that the property stays true**: no shipped source assigns
   `sys.argv`, every `main()` leaves the process argv byte-for-byte intact,
   each module is callable in-process on its own, and an explicit empty
