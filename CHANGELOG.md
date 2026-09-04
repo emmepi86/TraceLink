@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — 0.9.0
+## 0.9.0 — 2026-09-04 — evidence, and the refusal to exceed it
 
 The technical roadmap is frozen here. Two findings are closed as documented
 limitations rather than fixed, both in `docs/LIMITATIONS.md`: a bare

@@ -437,6 +437,25 @@ that is stale, or one whose freshness cannot be established.
 moved, with nothing to indicate anything is wrong. Steps 1 and 3 are cheap;
 wire them into a hook or a make target.
 
+## Validated on codebases we did not write
+
+Three unrelated open-source projects — Home Assistant Core, ERPNext and
+Zulip — with findings reconstructed from each project's own public pull
+requests, anchors verified against HEAD by an independent scan, and every
+expectation frozen before TraceLink was run.
+
+**Across 42 resolvable findings, TraceLink recovered 42/42 intended anchors
+with 0 unsupported authoritative assertions.** Where the evidence did not
+settle it — a name defined 3 815 times in one repository, 631 times in
+another, five times inside a single file — it refused to choose rather than
+guess.
+
+These benchmarks validate **linking behaviour, not improved coding-agent
+performance**. An agent A/B experiment was run and
+[invalidated](benchmarks/README.md) before it could produce a claim.
+
+Full findings, gold sets and results: [`benchmarks/`](benchmarks/).
+
 ## What it does not do
 
 Written down on purpose, with reasons, in
