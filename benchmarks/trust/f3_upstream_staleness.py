@@ -143,24 +143,29 @@ def main():
                                    "--out", symbols_path])
             correct, wrong = probe(repo, symbols_path)
             fresh = freshness_of(vault, symbols_path, repo)
+            upstream = fresh.get("upstream") or {}
             rows.append((backend, correct, wrong, fresh.get("status"),
-                         (fresh.get("reasons") or [None])[0]))
+                         upstream.get("state"), fresh.get("effective"),
+                         upstream.get("reason")))
 
         print(__doc__.split("\n\n")[0])
         print()
         print(f"  repository: {FILES} files, {FILES * FUNCS} symbols")
         print(f"  upstream artefact describes the code BEFORE {moved} symbols "
               f"moved\n")
-        print(f"  {'backend':<10} {'lines correct':>14} {'wrong':>7} "
-              f"{'freshness':>12}  reason")
-        for backend, correct, wrong, status, reason in rows:
-            print(f"  {backend:<10} {correct:>14} {wrong:>7} {str(status):>12}"
-                  f"  {reason}")
-        print("\n  scan reads the tree, so it cannot be stale.")
-        print("  graphify reads an artefact whose age nothing compares with "
-              "the sources —")
-        print("  and the index built from it is reported exactly as fresh as "
-              "the other.")
+        print(f"  {'backend':<10} {'lines ok':>9} {'wrong':>6} "
+              f"{'index':>8} {'upstream':>10} {'effective':>10}  why")
+        for backend, correct, wrong, status, up, effective, why in rows:
+            print(f"  {backend:<10} {correct:>9} {wrong:>6} {str(status):>8} "
+                  f"{str(up):>10} {str(effective):>10}  {why}")
+        print("\n  scan reads the tree, so its evidence cannot be older "
+              "than the tree.")
+        print("  graphify reads an artefact that records nothing about which "
+              "repository state")
+        print("  it describes — so the index may well be usable, but it is "
+              "not evidence of")
+        print("  currency, and `effective` says so instead of rounding up to "
+              "`fresh`.")
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
     return 0

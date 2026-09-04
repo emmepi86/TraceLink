@@ -125,6 +125,33 @@ repaired in place and not reported as a plain match: `link` rebuilds it,
 it appears in a published document only under `--debug`, and it is free to
 change when the resolver is refactored.
 
+### Freshness, in two parts
+
+An index carries two separate claims, and `link`, `status` and `sync`
+report both:
+
+```text
+index_freshness      is this index still about this repository?
+upstream_freshness   is the evidence it was built FROM current?
+effective_freshness  the less certain of the two
+```
+
+The combination is monotone — `fresh + unknown` is `unknown`, never
+`fresh` — because an index built a minute ago from a month-old artefact is
+new and out of date at the same time, and only one of those facts is safe
+to act on. `--freshness require` gates on the effective answer.
+
+`upstream_freshness` lives in the index under `indexing.upstream`:
+
+| state | meaning |
+|---|---|
+| `verified` | the backend read the working tree, or its artefact names the commit we are on and the tree is clean |
+| `stale` | the artefact names a different repository state |
+| `unknown` | the artefact records nothing checkable — a timestamp is diagnosis, not proof |
+
+`unknown` does not stop an index being used. **Usable and fresh are
+different words**, and only one of them is a claim about currency.
+
 ## 4. CLI JSON — the public API
 
 Every command's `--json` prints one document on stdout and nothing else;

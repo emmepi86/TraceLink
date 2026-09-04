@@ -165,10 +165,10 @@ def discover_scope(repo, scope):
                                  .replace(os.sep, "/"))
         return sorted(files), "exact"
     if kind == "ctags":
-        syms, err, considered = from_ctags(root)
+        syms, err, considered, _prov = from_ctags(root)
         return (considered, "exact") if not err else ([], "unknown")
     if kind == "graphify":
-        syms, err, considered = from_graphify(root)
+        syms, err, considered, _prov = from_graphify(root)
         return (considered, "exact") if not err else ([], "unknown")
     return [], "unknown"
 
@@ -218,6 +218,52 @@ def _add(out, name, path, line, kind, qualified):
         bucket.append(loc)
 
 
+#: Keys a backend artefact may use to say which repository state it was
+#: generated from. A commit or a tree hash can be checked against the
+#: repository; a timestamp cannot, and is kept as diagnosis only.
+_PROVENANCE_COMMIT_KEYS = ("commit", "source_commit", "repo_commit",
+                           "revision", "sha")
+_PROVENANCE_FINGERPRINT_KEYS = ("tree_hash", "source_fingerprint",
+                                "fingerprint")
+_PROVENANCE_TIME_KEYS = ("generated_at", "created_at", "timestamp")
+
+#: The scan backend reads the repository itself: there is no artefact in
+#: between that could be older than the code it describes.
+_WORKING_TREE = {"kind": "working-tree", "artifact": None,
+                 "source_commit": None, "source_fingerprint": None,
+                 "generated_at": None, "artifact_mtime": None}
+
+
+def _artifact_provenance(path, metadata=None):
+    """What an artefact says about the repository state it describes.
+
+    `state` is decided later, by comparing with the repository; this only
+    reports what the artefact carries. An artefact that carries nothing is
+    not evidence of currency, and saying so is the point.
+    """
+    out = {"kind": "artifact",
+           "artifact": path,
+           "source_commit": None,
+           "source_fingerprint": None,
+           "generated_at": None}
+    try:
+        out["artifact_mtime"] = int(os.path.getmtime(path))
+    except OSError:
+        out["artifact_mtime"] = None
+    for key, value in (metadata or {}).items():
+        if not isinstance(value, (str, int)):
+            continue
+        lowered = key.lower()
+        if lowered in _PROVENANCE_COMMIT_KEYS and not out["source_commit"]:
+            out["source_commit"] = str(value)
+        elif (lowered in _PROVENANCE_FINGERPRINT_KEYS
+                and not out["source_fingerprint"]):
+            out["source_fingerprint"] = str(value)
+        elif lowered in _PROVENANCE_TIME_KEYS and not out["generated_at"]:
+            out["generated_at"] = str(value)
+    return out
+
+
 def from_graphify(repo: str) -> Tuple[Dict[str, str], Optional[str]]:
     """Read graphify's graph.json.
 
@@ -230,18 +276,18 @@ def from_graphify(repo: str) -> Tuple[Dict[str, str], Optional[str]]:
     """
     path = os.path.join(repo, "graphify-out", "graph.json")
     if not os.path.exists(path):
-        return {}, f"no graph at {path}", []
+        return {}, f"no graph at {path}", [], None
     try:
         with open(path) as fh:
             data = json.load(fh)
     except Exception as exc:  # noqa: BLE001
-        return {}, f"unreadable graph.json: {type(exc).__name__}", []
+        return {}, f"unreadable graph.json: {type(exc).__name__}", [], None
 
     nodes = data.get("nodes")
     if nodes is None and isinstance(data.get("graph"), dict):
         nodes = data["graph"].get("nodes")
     if not isinstance(nodes, list):
-        return {}, "graph.json has no node list where expected", []
+        return {}, "graph.json has no node list where expected", [], None
 
     out: Dict[str, str] = {}
     considered = set()
@@ -266,7 +312,8 @@ def from_graphify(repo: str) -> Tuple[Dict[str, str], Optional[str]]:
         qualified = norm if norm and norm != label and "." in norm else None
         _add(out, label, str(src), loc, n.get("file_type") or "", qualified)
         considered.add(str(src))
-    return out, None, sorted(considered)
+    graph_meta = data.get("graph") if isinstance(data.get("graph"), dict) else {}
+    return out, None, sorted(considered), _artifact_provenance(path, graph_meta)
 
 
 # --------------------------------------------------------------------------- #
@@ -284,13 +331,20 @@ def from_ctags(repo: str) -> Tuple[Dict[str, str], Optional[str]]:
     """
     path = os.path.join(repo, "tags")
     if not os.path.exists(path):
-        return {}, f"no tags file at {path} (ctags -R --fields=+n -f tags .)", []
+        return {}, f"no tags file at {path} (ctags -R --fields=+n -f tags .)", [], None
     out: Dict[str, str] = {}
     considered = set()
+    pseudo: Dict[str, str] = {}
     try:
         with open(path, errors="replace") as fh:
             for line in fh:
                 if line.startswith("!_TAG_"):
+                    # Read the header rather than skipping it: if a generator
+                    # ever records which repository state it described, this
+                    # is where it would say so.
+                    header = line.rstrip("\n").split("\t")
+                    if len(header) >= 2:
+                        pseudo[header[0][6:].strip().lower()] = header[1].strip()
                     continue
                 parts = line.split("\t")
                 if len(parts) < 3:
@@ -307,8 +361,11 @@ def from_ctags(repo: str) -> Tuple[Dict[str, str], Optional[str]]:
                      f"{sc.group(1)}.{name}" if sc else None)
                 considered.add(fname)
     except Exception as exc:  # noqa: BLE001
-        return {}, f"unreadable tags: {type(exc).__name__}", []
-    return out, None, sorted(considered)
+        return {}, f"unreadable tags: {type(exc).__name__}", [], None
+    # universal-ctags records its own version in the pseudo-tags and
+    # nothing about the repository, so `pseudo` will not usually carry a
+    # commit. That is the answer, not a gap to fill with a guess.
+    return out, None, sorted(considered), _artifact_provenance(path, pseudo)
 
 
 # --------------------------------------------------------------------------- #
@@ -363,7 +420,8 @@ def from_scan(repo: str, max_files: int = 20000) -> Tuple[Dict[str, str], Option
                 continue
             seen += 1
             if seen > max_files:
-                return out, f"max-files-reached at {max_files}", sorted(considered)
+                return (out, f"max-files-reached at {max_files}",
+                        sorted(considered), _WORKING_TREE)
             full = os.path.join(root, fn)
             rel = os.path.relpath(full, repo).replace(os.sep, "/")
             considered.append(rel)
@@ -377,7 +435,7 @@ def from_scan(repo: str, max_files: int = 20000) -> Tuple[Dict[str, str], Option
                                  f"{module}.{m.group(1)}")
             except Exception:  # noqa: BLE001 - an unreadable file is not fatal
                 continue
-    return out, None, sorted(considered)
+    return out, None, sorted(considered), _WORKING_TREE
 
 
 BACKENDS = {"graphify": from_graphify, "ctags": from_ctags, "scan": from_scan}
@@ -392,7 +450,7 @@ def build(repo: str, backend: str = "auto"):
         if fn is None:
             notes.append(f"unknown backend {name!r}")
             continue
-        syms, err, considered = fn(repo)
+        syms, err, considered, provenance = fn(repo)
         # The note is recorded BEFORE the early return. Returning as soon as a
         # backend produced symbols discarded it, so a scan truncated at the file
         # limit reported `partial: false` — a completeness claim that was simply
@@ -400,8 +458,59 @@ def build(repo: str, backend: str = "auto"):
         if err:
             notes.append(f"{name}: {err}")
         if syms:
-            return syms, name, notes, considered
-    return {}, "none", notes, []
+            return syms, name, notes, considered, provenance
+    return {}, "none", notes, [], None
+
+
+def verify_upstream(provenance, repo):
+    """Is the evidence this index was built FROM current with the repository?
+
+    A different question from "is the index current", and the reason both
+    exist. `scan` reads the tree, so its evidence cannot be older than the
+    tree. A backend artefact can be any age, and only a commit or a tree
+    fingerprint it records can settle it: a timestamp cannot be compared
+    with anything reliable, so it is carried as diagnosis and decides
+    nothing.
+
+    No provenance means `unknown`, never `verified`. An index may be
+    perfectly usable and still not be evidence that it is current — those
+    are separate claims, and rounding the second one up is exactly the
+    failure this function exists to prevent.
+    """
+    if not isinstance(provenance, dict):
+        return {"state": "unknown", "reason": "backend-reported-no-provenance"}
+    out = dict(provenance)
+    if provenance.get("kind") == "working-tree":
+        out.update({"state": "verified",
+                    "reason": "backend-reads-the-working-tree"})
+        return out
+
+    commit = provenance.get("source_commit")
+    fingerprint = provenance.get("source_fingerprint")
+    if commit:
+        _vcs, current, dirty = repo_state(repo)
+        out["repository_commit"] = current
+        if current is None:
+            out.update({"state": "unknown", "reason": "repository-has-no-vcs"})
+        elif commit != current:
+            out.update({"state": "stale", "reason": "source-commit-differs"})
+        elif dirty:
+            # The artefact names the commit we are on, but the tree has
+            # uncommitted edits it could not have seen. That is not evidence
+            # of divergence, only absence of evidence of correspondence —
+            # and `stale` is a claim this cannot support.
+            out.update({"state": "unknown",
+                        "reason": "working-tree-modified-since-that-commit"})
+        else:
+            out.update({"state": "verified", "reason": "source-commit-matches"})
+        return out
+    if fingerprint:
+        out.update({"state": "unknown",
+                    "reason": "source-fingerprint-not-comparable"})
+        return out
+    out.update({"state": "unknown",
+                "reason": "artifact-records-no-repository-provenance"})
+    return out
 
 
 def main(argv=None, prog=None) -> int:
@@ -412,7 +521,8 @@ def main(argv=None, prog=None) -> int:
     ap.add_argument("--out", default="symbols.json")
     args = ap.parse_args(argv)
 
-    syms, used, notes, considered = build(os.path.abspath(args.repo), args.backend)
+    syms, used, notes, considered, provenance = build(os.path.abspath(args.repo),
+                                                      args.backend)
     for n in notes:
         print(f"  note: {n}", file=sys.stderr)
     if not syms:
@@ -453,6 +563,12 @@ def main(argv=None, prog=None) -> int:
                            "scope": "symbol-index"},
             "indexing": {"backend": used, "backend_version": None,
                          "partial": partial,
+                         # Where this index's EVIDENCE came from, and whether
+                         # that evidence is current. Separate from the index's
+                         # own freshness: an index built a minute ago from a
+                         # month-old artefact is new and out of date at once.
+                         "upstream": verify_upstream(provenance,
+                                                     os.path.realpath(repo_abs)),
                          # The scope descriptor is what makes the fingerprint
                          # reproducible by the linker. Without it the verifier
                          # hashed a different set than the indexer did, and a

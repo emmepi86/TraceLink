@@ -183,12 +183,25 @@ def _index(symbols_path: str, repo: str):
     out["freshness"] = fresh.status
     out["reasons"] = list(fresh.reasons)
     out["partial"] = bool(getattr(fresh, "partial", False))
+    # Two separate claims, reported separately: whether the index still
+    # describes this repository, and whether the evidence it was built from
+    # is current. `effective` is the one a decision should read.
+    upstream = getattr(fresh, "upstream", None) or {}
+    out["upstream_freshness"] = upstream.get("state", "unknown")
+    out["upstream_reason"] = upstream.get("reason")
+    out["effective_freshness"] = getattr(fresh, "effective", fresh.status)
     if fresh.status == "stale":
         problems.append("index-stale (run index)")
     elif fresh.status == "unknown":
         problems.append("index-freshness-unknown: " + ", ".join(fresh.reasons))
     elif fresh.status == "invalid":
         problems.append("index-invalid: " + ", ".join(fresh.reasons))
+    if out["upstream_freshness"] == "stale":
+        problems.append("upstream-stale: the artefact this index was built "
+                        "from describes another repository state")
+    elif out["upstream_freshness"] == "unknown" and fresh.status == "fresh":
+        problems.append("upstream-unknown: " + (out["upstream_reason"] or "")
+                        + " — the index is new, its evidence is unverified")
     return out, problems
 
 
@@ -354,6 +367,9 @@ def render_text(report: dict) -> str:
 
     idx = report["index"]
     lines.append(f"index_freshness:    {idx['freshness']}")
+    if idx.get("upstream_freshness"):
+        lines.append(f"upstream_freshness: {idx['upstream_freshness']}")
+        lines.append(f"effective_freshness: {idx.get('effective_freshness')}")
     for reason in idx["reasons"]:
         lines.append(f"reason:             {reason}")
     if idx["partial"]:

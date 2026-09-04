@@ -797,7 +797,55 @@ class Freshness:
         return d
 
 
+#: How much a state claims. `invalid` is not on this scale: it is a refusal.
+_CERTAINTY = {"stale": 0, "unknown": 1, "fresh": 2}
+
+#: An upstream verdict, said in the freshness vocabulary.
+_UPSTREAM_AS_FRESHNESS = {"verified": "fresh", "stale": "stale",
+                          "unknown": "unknown"}
+
+
+def combine_freshness(index_status, upstream_state):
+    """The freshness of an index cannot exceed the freshness of its source.
+
+        fresh + verified  -> fresh
+        fresh + unknown   -> unknown
+        fresh + stale     -> stale
+        stale + anything  -> stale
+
+    Monotone by construction: the effective answer is the least certain of
+    the two, because an index built this minute from a month-old artefact is
+    new and out of date at the same time, and only one of those facts is
+    safe to act on.
+    """
+    if index_status == "invalid":
+        return "invalid"
+    upstream = _UPSTREAM_AS_FRESHNESS.get(upstream_state, "unknown")
+    if index_status not in _CERTAINTY:
+        return "unknown"
+    return min((index_status, upstream), key=lambda state: _CERTAINTY[state])
+
+
 def verify_freshness(payload, repo, index_path=None):
+    """Freshness of the index, of the evidence behind it, and of both.
+
+    `status` remains what it has always been — whether the index still
+    describes this repository — so a caller reading it keeps reading the
+    same thing. `upstream` says whether the evidence the index was built
+    FROM is current, and `effective` is what a decision should use.
+    """
+    index = _verify_index_freshness(payload, repo, index_path)
+    upstream = ((payload.get("indexing") or {}).get("upstream")
+                if isinstance(payload, dict) else None)
+    if not isinstance(upstream, dict) or not upstream.get("state"):
+        upstream = {"state": "unknown",
+                    "reason": "index-predates-upstream-provenance"}
+    index.upstream = upstream
+    index.effective = combine_freshness(index.status, upstream["state"])
+    return index
+
+
+def _verify_index_freshness(payload, repo, index_path=None):
     """Compare an index against the repository it claims to describe."""
     try:
         from .symbol_index import (discover_scope as _ds, fingerprint as _fp,
@@ -873,6 +921,14 @@ def render_freshness(f, fmt="text"):
     lines = [f"index_freshness:   {f.status}"]
     for r in f.reasons:
         lines.append(f"reason:            {r}")
+    upstream = getattr(f, "upstream", None) or {}
+    if upstream:
+        lines.append(f"upstream_freshness: {upstream.get('state')}")
+        if upstream.get("reason"):
+            lines.append(f"upstream_reason:   {upstream['reason']}")
+    effective = getattr(f, "effective", None)
+    if effective:
+        lines.append(f"effective_freshness: {effective}")
     for label, attr in (("indexed_commit", "indexed_commit"),
                         ("current_commit", "current_commit")):
         v = getattr(f, attr, None)
@@ -936,8 +992,12 @@ def main(argv=None, prog=None) -> int:
         if fresh.status == "invalid":
             refusal = ("invalid-index", 2)
         elif mode == "require":
-            if fresh.status in ("stale", "unknown"):
-                refusal = (f"freshness-{fresh.status}", 1)
+            # The gate reads the EFFECTIVE freshness: "refuse to link against
+            # an index that is not proven current" is a claim about the
+            # evidence, not about when the file was written.
+            effective = getattr(fresh, "effective", fresh.status)
+            if effective in ("stale", "unknown"):
+                refusal = (f"freshness-{effective}", 1)
             elif getattr(fresh, "partial", False) and not args.allow_partial_index:
                 refusal = ("partial-index", 1)
         if refusal:

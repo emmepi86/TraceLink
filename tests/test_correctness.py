@@ -533,7 +533,7 @@ class EveryBackendPreservesDuplicates(unittest.TestCase):
                 {"label": "validate", "source_file": "src/users.py", "source_location": 10},
                 {"label": "validate", "source_file": "src/payments.py", "source_location": 20},
             ]}, open(os.path.join(tmp, "graphify-out", "graph.json"), "w"))
-            syms, _err, _c = symbols.from_graphify(tmp)
+            syms, _err, _c, _p = symbols.from_graphify(tmp)
         self.assertEqual(len(syms["validate"]), 2)
 
     def test_graphify_accepts_display_line_locations(self):
@@ -553,7 +553,7 @@ class EveryBackendPreservesDuplicates(unittest.TestCase):
                     {"label": "unknown_location", "source_file": "src/d.py",
                      "source_location": "not-a-line"},
                 ]}, graph_file)
-            syms, err, _considered = symbols.from_graphify(tmp)
+            syms, err, _considered, _p = symbols.from_graphify(tmp)
 
         self.assertIsNone(err)
         self.assertEqual(syms["from_prefixed"][0]["line"], 88)
@@ -591,7 +591,7 @@ class EveryBackendPreservesDuplicates(unittest.TestCase):
             os.makedirs(os.path.join(tmp, "b"))
             open(os.path.join(tmp, "a", "users.py"), "w").write("def validate(x):\n    return x\n")
             open(os.path.join(tmp, "b", "payments.py"), "w").write("def validate(x):\n    return x\n")
-            syms, _err, _c = symbols.from_scan(tmp)
+            syms, _err, _c, _p = symbols.from_scan(tmp)
         self.assertEqual(len(syms["validate"]), 2)
 
     def test_ctags(self):
@@ -600,7 +600,7 @@ class EveryBackendPreservesDuplicates(unittest.TestCase):
             open(os.path.join(tmp, "tags"), "w").write(
                 "validate\tsrc/users.py\t/^def validate/;\"\tf\tline:10\n"
                 "validate\tsrc/payments.py\t/^def validate/;\"\tf\tline:20\n")
-            syms, _err, _c = symbols.from_ctags(tmp)
+            syms, _err, _c, _p = symbols.from_ctags(tmp)
         self.assertEqual(len(syms["validate"]), 2)
 
     def test_qualified_name_is_null_when_the_backend_cannot_qualify(self):
@@ -610,7 +610,7 @@ class EveryBackendPreservesDuplicates(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             open(os.path.join(tmp, "tags"), "w").write(
                 "validate\tsrc/users.py\t/^def validate/;\"\tf\tline:10\n")
-            syms, _err, _c = symbols.from_ctags(tmp)
+            syms, _err, _c, _p = symbols.from_ctags(tmp)
         self.assertIsNone(syms["validate"][0]["qualified_name"])
 
 
@@ -627,7 +627,7 @@ class ScanIndexesModernJsTsExports(unittest.TestCase):
         from tracelink import symbol_index as symbols
         with tempfile.TemporaryDirectory() as tmp:
             open(os.path.join(tmp, fname), "w").write(source)
-            syms, err, _considered = symbols.from_scan(tmp)
+            syms, err, _considered, _p = symbols.from_scan(tmp)
         self.assertIsNone(err)
         return syms
 
@@ -1133,7 +1133,7 @@ class TruncationIsNeverSilent(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             for i in range(5):
                 open(os.path.join(tmp, f"f{i}.py"), "w").write("def x():\n    pass\n")
-            _syms, err, _c = symbols.from_scan(tmp, max_files=1)
+            _syms, err, _c, _p = symbols.from_scan(tmp, max_files=1)
         self.assertIn("max-files-reached", err or "")
 
     def test_build_keeps_notes_from_backends_that_failed_first(self):
@@ -1142,6 +1142,6 @@ class TruncationIsNeverSilent(unittest.TestCase):
         from tracelink import symbol_index as symbols
         with tempfile.TemporaryDirectory() as tmp:
             open(os.path.join(tmp, "a.py"), "w").write("def alpha():\n    pass\n")
-            _s, used, notes, _c = symbols.build(tmp, "auto")
+            _s, used, notes, _c, _p = symbols.build(tmp, "auto")
         self.assertEqual(used, "scan")
         self.assertTrue(notes, "notes from graphify/ctags were discarded")

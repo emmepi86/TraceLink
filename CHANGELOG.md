@@ -150,6 +150,28 @@
   distinction that carries the weight: the link state is a rebuildable
   cache (3 → 4 costs a relink), the CLI JSON is an API, and
   `schema_version` tracks incompatibility rather than releases.
+- **An index can no longer be fresher than the evidence behind it.** A
+  symbol graph generated a month before the code it described produced an
+  index reported as `fresh`, with 42% of its line numbers no longer holding
+  the symbol they named (benchmark 01, F3). The freshness check was not
+  broken — its scope was: it asks whether the index still describes this
+  repository, and an index built a minute ago honestly answers yes. There
+  are two questions now. `index_freshness` is unchanged;
+  `upstream_freshness` says whether the evidence the index was built *from*
+  is current; `effective_freshness` is the less certain of the two, and is
+  what `--freshness require` gates on. The combination is monotone and
+  tested as a property over the whole table, because the single way this
+  can fail is by rounding one cell up.
+- **A backend that records nothing is `unknown`, not `verified`.** `scan`
+  reads the working tree, so its evidence cannot be older than the tree. An
+  artefact backend is checked against the commit or tree hash it names; a
+  timestamp is carried as diagnosis and decides nothing, and an artefact
+  that names neither leaves freshness `unknown`. `unknown` does not stop the
+  index being used — usable and fresh are different words — but `status`
+  says so, `doctor` warns, and nothing calls it fresh. An index written
+  before this version has no upstream block and reads as `unknown` too.
+  A tree with uncommitted edits is `unknown` rather than `stale`: absence of
+  evidence of correspondence is not evidence of divergence.
 - **A test that the property stays true**: no shipped source assigns
   `sys.argv`, every `main()` leaves the process argv byte-for-byte intact,
   each module is callable in-process on its own, and an explicit empty

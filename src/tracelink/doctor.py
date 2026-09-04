@@ -119,6 +119,31 @@ def _vault_checks(project, values):
                     "tracelink sync — it rewrites the state in full")
 
 
+def _upstream_check(project, values):
+    """Is the evidence behind the index current, or merely unexamined?"""
+    symbols = _config.resolve(project, values, "symbols")
+    if not os.path.exists(symbols):
+        return None
+    try:
+        with open(symbols, encoding="utf-8") as fh:
+            upstream = ((json.load(fh).get("indexing") or {})
+                        .get("upstream") or {})
+    except Exception:  # noqa: BLE001
+        return None
+    state = upstream.get("state")
+    if state == "verified":
+        return Check(OK, "index evidence verified", upstream.get("reason", ""))
+    if state == "stale":
+        return Check(FAIL, "index evidence current",
+                     "the artefact this index was built from describes "
+                     "another repository state",
+                     "regenerate the backend artefact, then tracelink sync")
+    return Check(WARN, "index evidence current",
+                 upstream.get("reason") or "not recorded",
+                 "nothing to fix if the artefact is current — but tracelink "
+                 "cannot confirm it, so freshness reads `unknown`")
+
+
 def _backend_check(project, values):
     backend = values["backend"]
     if backend == "scan":
@@ -172,6 +197,9 @@ def diagnose(project, values):
     checks.append(_register_check(project, values))
     checks.extend(_vault_checks(project, values))
     checks.append(_backend_check(project, values))
+    upstream = _upstream_check(project, values)
+    if upstream is not None:
+        checks.append(upstream)
     checks.extend(_git_checks(project))
     return checks
 
