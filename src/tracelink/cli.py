@@ -61,10 +61,10 @@ def main(argv=None) -> int:
 
     module_name, _desc = entry
     module = __import__(f"tracelink.{module_name}", fromlist=["main"])
-    # argparse in each module reads sys.argv, so the sub-command is removed
-    # rather than the modules being rewritten to take an argv parameter.
-    sys.argv = [f"tracelink {command}"] + argv[1:]
-    return module.main()
+    # The sub-command's own arguments are passed down explicitly, and the
+    # name to print in usage with them. Nothing here touches sys.argv: the
+    # dispatcher must not be the reason a module is unusable in-process.
+    return module.main(argv[1:], prog=f"tracelink {command}")
 
 
 if __name__ == "__main__":

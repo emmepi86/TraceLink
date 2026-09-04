@@ -393,8 +393,9 @@ def render_text(report: dict) -> str:
     return "\n".join(lines)
 
 
-def main() -> int:
+def main(argv=None, prog=None) -> int:
     ap = argparse.ArgumentParser(
+        prog=prog,
         description="One-shot health of register, vault, index and links. "
                     "Writes nothing. Exit 0 always; --strict exits 1 when "
                     "any problem is found.")
@@ -406,7 +407,7 @@ def main() -> int:
     ap.add_argument("--format", choices=["text", "json"], default="text")
     ap.add_argument("--strict", action="store_true",
                     help="exit 1 when any problem is found (for CI)")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     problems: list = []
     reg, va, notes, p = _register_vault(args.register, args.vault)

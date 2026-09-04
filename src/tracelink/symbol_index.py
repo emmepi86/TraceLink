@@ -404,12 +404,13 @@ def build(repo: str, backend: str = "auto"):
     return {}, "none", notes, []
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description="Build a symbol -> file:line map.")
+def main(argv=None, prog=None) -> int:
+    ap = argparse.ArgumentParser(
+        prog=prog, description="Build a symbol -> file:line map.")
     ap.add_argument("--repo", required=True)
     ap.add_argument("--backend", default="auto", choices=["auto", "graphify", "ctags", "scan"])
     ap.add_argument("--out", default="symbols.json")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     syms, used, notes, considered = build(os.path.abspath(args.repo), args.backend)
     for n in notes:

@@ -352,22 +352,23 @@ def _count_source_files(project, limit):
 
 def _run(entry, argv):
     """Call another script's main() in-process with its own argv, swallowing
-    its chatter. Returns (exit_code, captured_stderr_tail)."""
+    its chatter. Returns (exit_code, captured_stderr_tail).
+
+    argv[0] is the name to show in usage and errors, the rest are the
+    arguments: the entry points take both explicitly, so a hook running
+    inside somebody else's process never rewrites that process's argv.
+    """
     import contextlib
     import io
     out, err = io.StringIO(), io.StringIO()
-    saved = sys.argv
     try:
-        sys.argv = argv
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            code = entry()
+            code = entry(argv[1:], prog=argv[0])
     except SystemExit as exc:  # argparse errors and explicit exits
         code = exc.code if isinstance(exc.code, int) else 1
     except Exception as exc:  # noqa: BLE001 — never propagate out of a hook
         code = 1
         err.write(f"{type(exc).__name__}: {exc}\n")
-    finally:
-        sys.argv = saved
     tail = err.getvalue().strip().splitlines()
     return code, (tail[-1] if tail else "")
 

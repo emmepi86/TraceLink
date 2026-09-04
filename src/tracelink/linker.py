@@ -792,8 +792,9 @@ def render_freshness(f, fmt="text"):
     return "\n".join(lines)
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description="Cross-link notes and code.")
+def main(argv=None, prog=None) -> int:
+    ap = argparse.ArgumentParser(
+        prog=prog, description="Cross-link notes and code.")
     ap.add_argument("--vault", required=True)
     ap.add_argument("--symbols", required=True)
     ap.add_argument("--max-links", type=int, default=8,
@@ -821,7 +822,7 @@ def main() -> int:
     ap.add_argument("--allow-partial-index", action="store_true",
                     help="accept an index whose scan did not complete")
     ap.add_argument("--format", choices=["text", "json"], default="text")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     with open(args.symbols, "rb") as fh:
         raw_symbols = fh.read()

@@ -241,8 +241,9 @@ def status(repo: str) -> int:
     return 0
 
 
-def main() -> int:
+def main(argv=None, prog=None) -> int:
     ap = argparse.ArgumentParser(
+        prog=prog,
         description="Install a git post-commit hook that refreshes the "
                     "tracelink index and links after every commit. The hook "
                     "only ever runs when the vault exists and tracelink is "
@@ -258,7 +259,7 @@ def main() -> int:
     ap.add_argument("--symbols", default=".tracelink/symbols.json",
                     help="symbols path baked into the hook (default "
                          ".tracelink/symbols.json)")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     if args.action == "install":
         return install(args.repo, args.vault, args.symbols)

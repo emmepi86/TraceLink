@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased — 0.8.1
+
+- **The CLI no longer depends on process global state.** Dispatch used to
+  rewrite `sys.argv` before calling a sub-command's `main()`, because each
+  module's argparse read the global. Every entry point now takes its own
+  arguments — `main(argv=None, prog=None)` — and the dispatcher passes the
+  sub-command's argv and the name to print in usage. `main(None)` still
+  reads `sys.argv[1:]`, so `python3 scripts/link.py ...` is unchanged, and
+  help and error output are byte-identical to 0.8.0 for every command.
+  The plugin's in-process runner stopped swapping the host process's argv
+  for the same reason. This is what makes `from tracelink import ...`
+  usable as a library instead of a simulated command line.
+- **A test that the property stays true**: no shipped source assigns
+  `sys.argv`, every `main()` leaves the process argv byte-for-byte intact,
+  each module is callable in-process on its own, and an explicit empty
+  argv parses as empty rather than falling back to the process's.
+
 ## 0.8.0 — notes anchor to files, not just symbols
 
 The 2x2 benchmark (ROADMAP.md) measured where memory matters most: the
@@ -220,7 +237,6 @@ Fixed, both reading v2 fields from a v3 index:
 
 63 tests.
 
-
 ## 0.4.2 — the scope is now persisted, so the linker can reproduce it
 
 0.4.1 scoped the fingerprint at indexing time and did not record WHAT it had
@@ -257,7 +273,6 @@ vault written    fresh      source removed    stale
 
 63 tests.
 
-
 ## 0.4.1 — freshness of the index, not of the repository
 
 0.4.0 answered the wrong question. It hashed every file in the tree, so a
@@ -286,7 +301,6 @@ changed" were treated as the same statement.
   comment describing behaviour that no longer existed.
 
 58 tests.
-
 
 ## 0.4.0 — freshness is verified, not recorded
 
@@ -341,7 +355,6 @@ being purely verificative.
 
 52 tests.
 
-
 ## 0.3.1 — the graphify backend still dropped duplicates
 
 0.3.0's central promise was that a name defined twice is never resolved by
@@ -376,7 +389,6 @@ accident. One backend did not keep that promise.
 
 41 tests.
 
-
 ## 0.3.0 — ambiguity is data, not a guess
 
 - **Symbol schema v2: every definition is recorded.** v1 kept one location per
@@ -395,7 +407,6 @@ accident. One backend did not keep that promise.
 - **`ambiguous_matches`** joins the metrics; `--explain` reports how each link
   was resolved.
 - v1 symbol files still load — the linker normalises both shapes.
-
 
 ## 0.2.1 — correctness follow-up
 

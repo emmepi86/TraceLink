@@ -352,8 +352,9 @@ def _load_manifest(vault: str) -> dict:
     return man if isinstance(man, dict) else {}
 
 
-def main() -> int:
+def main(argv=None, prog=None) -> int:
     ap = argparse.ArgumentParser(
+        prog=prog,
         description="Lint a findings register — read-only quality gate.")
     ap.add_argument("--register", required=True)
     ap.add_argument("--vault",
@@ -373,7 +374,7 @@ def main() -> int:
                     help="check only findings the vault manifest has not "
                          "seen (requires --vault)")
     ap.add_argument("--format", choices=["text", "json"], default="text")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     if not os.path.isfile(args.register):
         print(f"register not found: {args.register}", file=sys.stderr)

@@ -199,8 +199,10 @@ def note_body(fid: str, blocks: List[str], prefix: str) -> tuple:
     return body, st, sv, len(blocks), title
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description="Split a findings register into a note vault.")
+def main(argv=None, prog=None) -> int:
+    ap = argparse.ArgumentParser(
+        prog=prog,
+        description="Split a findings register into a note vault.")
     ap.add_argument("--register", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--prefix", default="RES", help="finding id prefix, e.g. RES, BUG, ADR")
@@ -208,7 +210,7 @@ def main() -> int:
                     help="report the identifier styles present and write nothing")
     ap.add_argument("--adopt-vault", action="store_true",
                     help="take over a vault built from a different register")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     if args.inspect:
         text = open(args.register, errors="replace").read()
