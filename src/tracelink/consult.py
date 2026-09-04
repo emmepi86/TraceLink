@@ -132,6 +132,11 @@ RESOLUTION = {
     "override-unmatched": ("conflict", None),
 }
 
+#: Reasons the resolver can return that describe a NON-event: no link was
+#: made and nothing is recorded, so they never reach a published document
+#: and deliberately have no public name. `link --explain` shows them.
+INTERNAL_ONLY_REASONS = ("insufficient-explicit-evidence",)
+
 #: The three published states. `match` asserted a location; `ambiguous` and
 #: `conflict` assert nothing, and say why.
 PUBLIC_STATES = ("match", "ambiguous", "conflict")

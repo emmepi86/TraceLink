@@ -19,17 +19,22 @@ python3 benchmarks/context_quality.py --repo /path/to/code \
 ## Result
 
 ```
-CONTEXT RECALL           56/56   (100%)
-CONTEXT PRECISION        92%
-FALSE-AUTHORITY EXPOSURE   3     (target 0)
+                          before F6 fix     after
+CONTEXT RECALL                56/56         56/56    (100%)
+CONTEXT PRECISION              92%           97%
+FALSE-AUTHORITY EXPOSURE        3             0      (target 0)
 ```
 
-| Verdict | |
-|---|---:|
-| useful | 56 |
-| false authority | **3** |
-| acceptable | 3 |
-| benign noise | 2 |
+| Verdict | before | after |
+|---|---:|---:|
+| useful | 56 | 56 |
+| false authority | **3** | **0** |
+| acceptable | 3 | 3 |
+| benign noise | 2 | 2 |
+
+Same harness, same targets, same vault recipe. Recall did not move, which
+is the point: the evidence gate removed links nobody had written and no
+knowledge anybody had.
 
 | Shape of a briefing | |
 |---|---|
@@ -44,11 +49,20 @@ FALSE-AUTHORITY EXPOSURE   3     (target 0)
 They are not averaged into one score, because only one of them is
 dangerous.
 
-**A — wrong evidence: 3 occurrences, 2 findings.** Both are
+**A — wrong evidence: 3 occurrences, 2 findings — now 0.** Both were
 [F6](../b03-gold/): a plain word in the prose also names an indexed symbol,
-so the finding surfaces at a target its author never pointed at. This is not
-a ranking problem. Ranking it lower leaves it there, believed by whoever
-reads far enough.
+so the finding surfaced at a target its author never pointed at. One came
+from a pytest fixture named after a domain word; the other from an ordinary
+sentence naming a class without backticks, in a finding that backticked the
+symbol it was actually about. F6 needs no exotic name — it needs a sentence
+written the way people write sentences.
+
+This was never a ranking problem: ranking it lower leaves it there, believed
+by whoever reads far enough. The rule is now that **uniqueness is resolution
+evidence, not reference evidence** — knowing there is only one `landing` in
+the repository does not show that "the landing page" meant it. A bare word
+remains a candidate and still counts toward an ambiguity; it cannot produce
+a match alone.
 
 **B — irrelevant context: 2.** One is worth its own name. A finding cites a
 path *in order to deny a relationship* — "this has nothing to do with that

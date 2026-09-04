@@ -27,17 +27,21 @@ python3 benchmarks/gold_score.py --repo /path/to/code \
 ## Result
 
 ```
-FALSE AUTHORITATIVE ASSERTIONS   1   (target 0)
-SUPPORTED KNOWLEDGE RECOVERED    32/32   (100%)
+                                  before F6 fix     after
+FALSE AUTHORITATIVE ASSERTIONS          1             0     (target 0)
+SUPPORTED KNOWLEDGE RECOVERED         32/32         32/32   (100%)
 ```
 
-| Outcome | |
-|---|---:|
-| correct match | 32 |
-| correct ambiguity | 9 |
-| correct no-assertion | 7 |
-| unsupported assertion | **1** |
-| false ambiguity | 1 |
+| Outcome | before | after |
+|---|---:|---:|
+| correct match | 32 | 32 |
+| correct ambiguity | 9 | **10** |
+| correct no-assertion | 7 | 7 |
+| unsupported assertion | **1** | **0** |
+| false ambiguity | 1 | 1 |
+
+The fix is described below and in the changelog; the harness was not
+touched between the two runs, and recall did not move.
 
 Adversarial findings handled as expected: **10 / 11**.
 
@@ -61,10 +65,14 @@ same time. The defect is not a wrong disambiguation; it is that prose
 becomes evidence. The documented contract asks authors to name code in
 backticks and `lint` rewards it, but the resolver does not require it.
 
-Registered as **F6** and not fixed: tightening candidate extraction inside
-the benchmark that found it is how a tool gets fitted to its own test data.
-The contributing factor — the index covering the test suite, where fixtures
-are named after domain words — is registered with it.
+Registered as **F6** and not fixed in this run — tightening extraction
+inside the benchmark that found it is how a tool gets fitted to its own test
+data. It was fixed afterwards, once [b04](../b04-context/) had measured that
+**all 56 useful anchors already carried explicit evidence**, so requiring it
+could not cost recall on real findings. A bare word is still a candidate and
+still counts toward an ambiguity; it can no longer produce a match on its
+own. Both benchmarks were then rerun unchanged: false assertions 1 → 0,
+recall 32/32 → 32/32.
 
 ## The false ambiguity — F7
 

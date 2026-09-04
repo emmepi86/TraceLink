@@ -423,7 +423,8 @@ def _dotted_matches_path(path: str, ref: str) -> bool:
     return parts[-len(prefix):] == prefix or parts[-len(segments):] == segments
 
 
-def disambiguate(name: str, locations: list, text: str, overrides: dict):
+def disambiguate(name: str, locations: list, text: str, overrides: dict,
+                 why: str = "inline-code"):
     """Pick a location only when the evidence points at exactly one.
 
     Returns `(location, reason, basis)`. The basis is the evidence that
@@ -481,7 +482,33 @@ def disambiguate(name: str, locations: list, text: str, overrides: dict):
                                               for r in refs]
 
     if len(locations) == 1:
-        return locations[0], "unique", [["sole_candidate", name]]
+        loc = locations[0]
+        if why == "inline-code":
+            # The author wrote it as code. Uniqueness then settles WHICH
+            # definition; the backticks settled that a reference was meant.
+            return loc, "unique", [["sole_candidate", name]]
+        # A bare word in prose. Uniqueness is resolution evidence, not
+        # reference evidence: knowing there is only one `landing` in the
+        # repository does not show that the sentence "the landing page"
+        # was pointing at it. Benchmark 04 found two such links, one of
+        # them from an ordinary sentence naming a class without backticks.
+        # So the same location is offered a second chance, on evidence the
+        # author did write:
+        if refs and any(_dotted_matches_qualified(loc, r)
+                        or _dotted_matches_path(loc["path"], r) for r in refs):
+            return loc, dotted_how or "dotted-name", [
+                ["dotted_reference", _matching_ref(loc, refs, dotted_how)]]
+        qualified = loc.get("qualified_name")
+        if qualified and qualified in text:
+            return loc, "qualified-name", [["qualified_name_in_note",
+                                            qualified]]
+        if loc["path"] in text:
+            return loc, "path-in-note", [["path_in_note", loc["path"]]]
+        # Nothing explicit. The candidate stays a candidate and no link is
+        # asserted; the caller records nothing, because the author asserted
+        # nothing. `--explain` says so.
+        return None, "insufficient-explicit-evidence", [
+            ["bare_identifier_in_prose", name]]
 
     by_qualified = [l for l in locations
                     if l.get("qualified_name") and l["qualified_name"] != name
@@ -1274,7 +1301,15 @@ def main(argv=None, prog=None) -> int:
             links, note_provenance = [], []
             for sym, why in candidates(body, symbols, args.min_len, stop):
                 loc, how, basis = disambiguate(sym, symbols[sym], body,
-                                               overrides)
+                                               overrides, why)
+                if loc is None and how == "insufficient-explicit-evidence":
+                    # Not an ambiguity and not a conflict: a word that could
+                    # have been a reference and was not written as one. It
+                    # produced nothing, so nothing is recorded about it.
+                    if args.explain:
+                        print(f"{os.path.splitext(name)[0]} -> {sym}\n"
+                              f"    no link: named only as prose, not as code")
+                    continue
                 if loc is None:
                     note_ambiguous.append({
                         "kind": "symbol", "name": sym, "reason": how,

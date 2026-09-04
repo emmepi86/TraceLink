@@ -257,6 +257,23 @@
   `explain` renders them identically. Found while writing the ms-11d tests
   and fixed in its own step, because it changes the state schema (5 → 6) and
   the published vocabulary rather than the timing of a walk.
+- **A bare word in prose is a candidate, never a link on its own.** Two
+  benchmarks measured three anchors nobody had written: one from a pytest
+  fixture whose name is an ordinary domain word, one from a sentence naming
+  a class the way sentences name classes — without backticks — in a finding
+  that backticked the symbol it was actually about. Both names were unique
+  in the repository, and uniqueness was being treated as sufficient. It is
+  not the same evidence: **uniqueness settles which definition a reference
+  means; the author settles that a reference was meant.** A unique symbol
+  named only as prose now produces no link. It remains a candidate, still
+  counts toward an ambiguity — refusing to choose is not an assertion — and
+  is still linked when the author wrote it as code: backticks, a qualified
+  name, a cited path, an explicit override. Nothing semantic is read: no
+  language, no negation, no intent.
+  Measured before deciding: all 56 useful anchors in the context benchmark
+  already carried explicit evidence, so the gate could not cost recall. Both
+  benchmarks rerun unchanged afterwards — false assertions 1 → 0, false
+  authority 3 → 0, recall 32/32 and 56/56 in both cases unmoved.
 - **A test that the property stays true**: no shipped source assigns
   `sys.argv`, every `main()` leaves the process argv byte-for-byte intact,
   each module is callable in-process on its own, and an explicit empty

@@ -53,5 +53,11 @@
       "note": "on the busiest target all nine findings were useful and in anchor order; no data supports a ranking or budget change yet"
     }
   },
-  "discipline": "resolver frozen for this benchmark; two flaws found in the SCORER were fixed and are described, not hidden"
+  "discipline": "resolver frozen for this benchmark; two flaws found in the SCORER were fixed and are described, not hidden",
+  "after_f6_fix": {
+    "false_authority": 0,
+    "before": 3,
+    "recall": "unchanged",
+    "note": "same harness, resolver gate added between the two runs"
+  }
 }

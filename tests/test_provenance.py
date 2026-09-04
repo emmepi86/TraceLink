@@ -120,8 +120,25 @@ class TheMappingIsComplete(unittest.TestCase):
                         second.value, str):
                     returned.add(second.value)
         self.assertTrue(returned, "no reasons found — did the shape change?")
-        self.assertEqual(set(), returned - set(RESOLUTION),
+        # Some reasons describe a NON-event: nothing was linked and nothing
+        # was recorded, so they never reach a document and need no public
+        # name. They are listed, not exempted by silence.
+        allowed = set(RESOLUTION) | set(consult_mod.INTERNAL_ONLY_REASONS)
+        self.assertEqual(set(), returned - allowed,
                          "an internal reason with no published mapping")
+
+    def test_an_internal_only_reason_never_reaches_the_state(self):
+        """The exemption is only sound while it stays true."""
+        with tempfile.TemporaryDirectory() as tmp:
+            _p, _v, state = build(tmp, ONE_FILE,
+                                  finding("only_here is named as prose."))
+            for entry in state["notes"].values():
+                for record in entry["provenance"]:
+                    self.assertNotIn(record["reason"],
+                                     consult_mod.INTERNAL_ONLY_REASONS)
+                for item in entry["ambiguous"]:
+                    self.assertNotIn(item["reason"],
+                                     consult_mod.INTERNAL_ONLY_REASONS)
 
     def test_the_published_states_are_exactly_the_declared_ones(self):
         self.assertEqual(set(PUBLIC_STATES),

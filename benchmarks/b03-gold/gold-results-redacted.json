@@ -75,5 +75,11 @@
       "why": "two names the gold expected to be unique are defined in both the backend and the frontend. The expectations had been written from a Python-only scan while the index covers TypeScript too — the tool was right and the gold was wrong, corrected and marked as corrected in the private gold file."
     }
   ],
-  "discipline": "the resolver was not changed while this ran"
+  "discipline": "the resolver was not changed while this ran",
+  "after_f6_fix": {
+    "false_authority": 0,
+    "before": 1,
+    "recall": "unchanged",
+    "note": "same harness, resolver gate added between the two runs"
+  }
 }
