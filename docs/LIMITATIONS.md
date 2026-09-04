@@ -16,6 +16,12 @@ It cannot become a false link: since the evidence gate, a bare word in
 prose can produce a candidate and an ambiguity, never a match. So what
 remains is over-refusal, which is the direction this tool prefers to err in.
 
+Measured twice, and the size depends on the codebase: 1 finding in 50 on a
+private 500k-line codebase, **4 in 20** on Home Assistant Core, where 74 179
+definitions make ordinary English words — `template`, `firmware`,
+`callback`, `release` — collide with real symbol names. Still no false
+claim; more noise.
+
 The fix would be a stop-word list, and that is the reason there isn't one.
 `db`, `app`, `user`, `session`, `config`, `client` are common words *and*
 perfectly real symbols. A list that hides them is a list that varies by

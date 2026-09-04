@@ -16,6 +16,7 @@ fixture are honest, precision numbers from one would not be. Accuracy needs
 findings a human wrote about code they know, and is measured separately.
 
 - [`b01/`](b01/) — one large private codebase, redacted results.
+- [`b05-home-assistant/`](b05-home-assistant/) — **the first codebase we did not write**, published whole: findings, gold and results.
 
 ## An experiment we invalidated
 

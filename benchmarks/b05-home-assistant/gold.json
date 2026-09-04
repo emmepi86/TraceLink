@@ -1,0 +1,356 @@
+{
+  "target": "home-assistant/core @ 8d626131",
+  "authored": "from the project's public issue/PR history; no TraceLink output was consulted while writing the expectations",
+  "findings": [
+    {
+      "finding_id": "HA-001",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "ensure_printer_is_supported"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 172375",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    },
+    {
+      "finding_id": "HA-002",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "_trigger_event"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 177403",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    },
+    {
+      "finding_id": "HA-003",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "SerializationError"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 105314 / orjson#445",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    },
+    {
+      "finding_id": "HA-004",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "_get_setpoint_range_value"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 180299",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    },
+    {
+      "finding_id": "HA-005",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "remove_pollable_characteristics"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 152086",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    },
+    {
+      "finding_id": "HA-006",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "_async_update_attrs"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 180420",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    },
+    {
+      "finding_id": "HA-007",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "_update_from_device"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 180554 / 180541",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    },
+    {
+      "finding_id": "HA-008",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "set_cover_tilt_position"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 73921",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    },
+    {
+      "finding_id": "HA-009",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "file",
+            "path": "homeassistant/components/vizio/manifest.json"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 181131",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    },
+    {
+      "finding_id": "HA-010",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "file",
+            "path": "homeassistant/components/airthings_ble/config_flow.py"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 155694",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    },
+    {
+      "finding_id": "HA-011",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "file",
+            "path": "homeassistant/components/bsblan/climate.py"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 97210",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    },
+    {
+      "finding_id": "HA-012",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "file",
+            "path": "homeassistant/components/fibaro/climate.py"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 83659",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    },
+    {
+      "finding_id": "HA-013",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "file",
+            "path": "homeassistant/components/tradfri/entity.py"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 181276",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    },
+    {
+      "finding_id": "HA-014",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "file",
+            "path": "homeassistant/components/airzone/climate.py"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 180476",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    },
+    {
+      "finding_id": "HA-015",
+      "expected": {
+        "state": "ambiguous",
+        "names": [
+          "async_setup_entry"
+        ]
+      },
+      "review": {
+        "source": "PR 175895",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    },
+    {
+      "finding_id": "HA-016",
+      "expected": {
+        "state": "ambiguous",
+        "names": [
+          "async_step_user"
+        ]
+      },
+      "review": {
+        "source": "PR 104790",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    },
+    {
+      "finding_id": "HA-017",
+      "expected": {
+        "state": "no-assertion"
+      },
+      "review": {
+        "source": "PR 105327 (path since moved)",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    },
+    {
+      "finding_id": "HA-018",
+      "expected": {
+        "state": "no-assertion"
+      },
+      "review": {
+        "source": "PR 104391 (symbol since removed)",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    },
+    {
+      "finding_id": "HA-019",
+      "expected": {
+        "state": "no-assertion"
+      },
+      "review": {
+        "source": "PR 72240 (symbol since removed)",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    },
+    {
+      "finding_id": "HA-020",
+      "expected": {
+        "state": "no-assertion"
+      },
+      "review": {
+        "source": "project process",
+        "authored_from": "the project's own issue/PR history, before TraceLink was run",
+        "verified_by_human": true,
+        "category": "external-knowledge",
+        "adversarial": false
+      }
+    }
+  ]
+}
