@@ -132,6 +132,24 @@
 - `.tracelink/config.json` gets a documented reader with defaults, shared by
   the commands. The plugin keeps its own copy, because it must import
   nothing on the per-edit path; a test pins the two to the same keys.
+- **`tracelink init`** — creates the minimum `sync` needs (a `.tracelink/`,
+  a config, a register if there is none) and nothing else. It creates; it
+  does not repair: anything already present is kept and reported as kept,
+  and a second run changes nothing byte for byte. It detects rather than
+  asks — git, and which symbol backend has its input on disk right now,
+  with the reason, so a `scan` chosen because there is no `tags` file says
+  so instead of looking like a preference.
+- **`tracelink doctor`** — the complement of `status`: setup health, not
+  memory health. Config parses, register readable, vault writable, link
+  state at a schema this version reads, the configured backend actually has
+  its input, git and hook present. Each finding carries the command that
+  fixes it. There is no `--fix`, deliberately, and a test asserts the flag
+  does not exist: a repair that runs before the diagnosis is understood is
+  how a tool destroys a vault somebody cared about.
+- **`docs/SCHEMAS.md`** — the four contracts, told apart on purpose. The
+  distinction that carries the weight: the link state is a rebuildable
+  cache (3 → 4 costs a relink), the CLI JSON is an API, and
+  `schema_version` tracks incompatibility rather than releases.
 - **A test that the property stays true**: no shipped source assigns
   `sys.argv`, every `main()` leaves the process argv byte-for-byte intact,
   each module is callable in-process on its own, and an explicit empty

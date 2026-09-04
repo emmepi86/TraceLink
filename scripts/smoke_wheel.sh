@@ -75,6 +75,15 @@ cd "$WORK/project"
 "$VENV_TL" status --register "$WORK/FINDINGS.md" --vault "$WORK/vault" \
   --symbols "$WORK/symbols.json" --repo . >/dev/null
 
+echo "== a project can be started and diagnosed from the wheel =="
+mkdir -p "$WORK/fresh/src"
+printf 'def compute_total():\n    return 1\n' > "$WORK/fresh/src/a.py"
+(cd "$WORK/fresh" && "$VENV_TL" init >/dev/null && "$VENV_TL" sync >/dev/null \
+   && "$VENV_TL" doctor >/dev/null) \
+  || { echo "init -> sync -> doctor failed on a fresh project"; exit 1; }
+(cd "$WORK/fresh" && "$VENV_TL" sync --check) \
+  || { echo "a sync straight after a sync reported work to do"; exit 1; }
+
 echo "== the public primitive answers, in text and in json =="
 "$VENV_TL" consult src/parser.py --repo . --vault "$WORK/vault" \
   | grep -q 'known findings about this file' \

@@ -117,6 +117,18 @@ word `CLOSED` — it merely mentions RES-01's outcome. **RES-01 is `closed` with
 severity `low`**, taken from its explicit `### STATUS:` / `### SEVERITY:`
 headings. Those two lines are the whole reason the example exists.
 
+Start a project in one step:
+
+```bash
+tracelink init      # creates .tracelink/, a config, a register if you have none
+tracelink doctor    # is this set up correctly? (diagnosis only, no --fix)
+```
+
+`init` creates and never repairs: run it twice and the second run changes
+nothing, byte for byte. Anything already there is kept and reported as kept.
+`doctor` is the complement of `status` — setup health rather than memory
+health — and never writes.
+
 ## Install
 
 **As a Claude Code plugin** — the repository is its own marketplace, so the
