@@ -1,0 +1,276 @@
+{
+  "benchmark": "b01",
+  "target": {
+    "description": "a single large private multi-tenant SaaS backend",
+    "note": "one codebase, not a universal benchmark. Numbers describe this repository on this machine and generalise no further.",
+    "redacted": [
+      "name",
+      "absolute paths",
+      "commit",
+      "module and symbol names",
+      "internal dates"
+    ]
+  },
+  "tracelink": {
+    "commit": "6153563",
+    "version": "0.8.0"
+  },
+  "environment": {
+    "python": "3.10.12",
+    "platform_family": "Linux x86_64",
+    "note": "single run, no dedicated benchmarking host"
+  },
+  "method": {
+    "read_only": "every artefact written outside the target tree; each run ended by checking that no file under the target was created or modified while it ran",
+    "repeats": 3,
+    "cold_warm": "cold is the first run of three; warm is the median and the minimum of the rest",
+    "consult_sampling": "every file and symbol the vault links (n reported per row), p50/p95 over that population",
+    "register": "performance fixture generated from indexed symbols — timing only, never accuracy"
+  },
+  "runs": [
+    {
+      "backend": "scan",
+      "scope": "whole repository",
+      "inventory": {
+        "indexable_files": 2737,
+        "indexable_lines": 515181,
+        "files_walked": 8295,
+        "directories_skipped": 48,
+        "by_extension": {
+          ".py": 1705,
+          ".tsx": 521,
+          ".js": 335,
+          ".ts": 168,
+          ".php": 6,
+          ".sql": 2
+        },
+        "lines_by_extension": {
+          ".py": 330805,
+          ".tsx": 144622,
+          ".ts": 25107,
+          ".sql": 8986,
+          ".js": 4071,
+          ".php": 1590
+        }
+      },
+      "index": {
+        "symbols": 13866,
+        "bytes": 3733551
+      },
+      "linking": {
+        "notes": 100,
+        "links": 102,
+        "unresolved": 3,
+        "state_bytes": 1510604,
+        "state_bytes_per_note": 15106.0
+      },
+      "timings": {
+        "index": {
+          "cold_s": 1.5988,
+          "warm_median_s": 1.6409,
+          "warm_min_s": 1.6261,
+          "runs": 3
+        },
+        "split": {
+          "cold_s": 0.0246,
+          "warm_median_s": 0.0309,
+          "warm_min_s": 0.0275,
+          "runs": 3
+        },
+        "link_full": {
+          "cold_s": 0.8833,
+          "warm_median_s": 0.8434,
+          "warm_min_s": 0.8427,
+          "runs": 3
+        },
+        "link_incremental": {
+          "cold_s": 0.8839,
+          "warm_median_s": 0.9466,
+          "warm_min_s": 0.9314,
+          "runs": 3
+        },
+        "consult_file": {
+          "n": 94,
+          "p50_ms": 9.912,
+          "p95_ms": 13.922,
+          "max_ms": 25.15,
+          "total_s": 0.995
+        },
+        "consult_symbol": {
+          "n": 102,
+          "p50_ms": 10.275,
+          "p95_ms": 13.283,
+          "max_ms": 25.336,
+          "total_s": 1.094
+        },
+        "explain": {
+          "n": 100,
+          "p50_ms": 8.992,
+          "p95_ms": 10.73,
+          "max_ms": 11.315,
+          "total_s": 0.912
+        },
+        "doctor": {
+          "cold_s": 0.0054,
+          "warm_median_s": 0.0041,
+          "warm_min_s": 0.0039,
+          "runs": 3
+        }
+      },
+      "fixture": {
+        "findings": 100,
+        "note": "timing only, not a gold set"
+      }
+    },
+    {
+      "backend": "graphify",
+      "scope": "backend subtree only",
+      "inventory": {
+        "indexable_files": 673,
+        "indexable_lines": 173483,
+        "files_walked": 719,
+        "directories_skipped": 17,
+        "by_extension": {
+          ".py": 673
+        },
+        "lines_by_extension": {
+          ".py": 173483
+        }
+      },
+      "index": {
+        "symbols": 9229,
+        "bytes": 2008552
+      },
+      "linking": {
+        "notes": 100,
+        "links": 104,
+        "unresolved": 4,
+        "state_bytes": 1146794,
+        "state_bytes_per_note": 11467.9
+      },
+      "timings": {
+        "index": {
+          "cold_s": 0.7688,
+          "warm_median_s": 0.8731,
+          "warm_min_s": 0.8062,
+          "runs": 3
+        },
+        "split": {
+          "cold_s": 0.0236,
+          "warm_median_s": 0.0299,
+          "warm_min_s": 0.0296,
+          "runs": 3
+        },
+        "link_full": {
+          "cold_s": 0.8334,
+          "warm_median_s": 0.7365,
+          "warm_min_s": 0.6928,
+          "runs": 3
+        },
+        "link_incremental": {
+          "cold_s": 0.7674,
+          "warm_median_s": 0.916,
+          "warm_min_s": 0.8503,
+          "runs": 3
+        },
+        "consult_file": {
+          "n": 86,
+          "p50_ms": 8.558,
+          "p95_ms": 10.469,
+          "max_ms": 11.657,
+          "total_s": 0.746
+        },
+        "consult_symbol": {
+          "n": 104,
+          "p50_ms": 7.93,
+          "p95_ms": 10.818,
+          "max_ms": 15.747,
+          "total_s": 0.87
+        },
+        "explain": {
+          "n": 100,
+          "p50_ms": 7.77,
+          "p95_ms": 9.585,
+          "max_ms": 16.618,
+          "total_s": 0.802
+        },
+        "doctor": {
+          "cold_s": 0.0012,
+          "warm_median_s": 0.0006,
+          "warm_min_s": 0.0006,
+          "runs": 3
+        }
+      },
+      "fixture": {
+        "findings": 100,
+        "note": "timing only, not a gold set"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "B01-F1",
+      "severity": "P1",
+      "title": "consult parses, on every edit, the part of the link state it never reads",
+      "evidence": {
+        "symbol_locations_bytes": 1417793,
+        "notes_bytes": 51133,
+        "state_bytes": 1510604,
+        "share_of_state": 0.939,
+        "json_parse_ms": 9.78,
+        "consult_p50_ms": 9.91
+      },
+      "consequence": "per-edit cost scales with the size of the INDEX, not the size of the vault"
+    },
+    {
+      "id": "B01-F2",
+      "severity": "P1",
+      "title": "incremental linking saves about a quarter, not 4-5x, on a large repository",
+      "evidence": {
+        "link_empty_vault_s": 0.638,
+        "link_full_s": 0.843,
+        "link_incremental_s": 0.931,
+        "fixed_cost_share": 0.76
+      },
+      "consequence": "the fixed cost is the tree walk; the skip can only save what is left"
+    },
+    {
+      "id": "B01-F3",
+      "severity": "P0",
+      "title": "staleness of a backend's INPUT is invisible",
+      "evidence": {
+        "graph_age_days": 36,
+        "index_freshness_reported": "fresh",
+        "freshness_reason": "fingerprint-match",
+        "line_probe_sample": 300,
+        "lines_still_correct": 175,
+        "lines_wrong": 125,
+        "wrong_share": 0.417,
+        "control_scan_backend": {
+          "sample": 300,
+          "correct": 300,
+          "wrong": 0
+        }
+      },
+      "consequence": "freshness is transitive and the chain is not checked: 'the derived index is unchanged' was reported where 'the evidence it was built from is current' was meant"
+    },
+    {
+      "id": "B01-F4",
+      "severity": "P0",
+      "title": "a mismatch between the path base a backend records and the --repo given passes silently",
+      "evidence": {
+        "links_emitted": 104,
+        "paths_that_resolve": 0,
+        "only_signal": "index_completeness: partial"
+      },
+      "consequence": "anchors that point at no code, with no fail-closed"
+    },
+    {
+      "id": "B01-O1",
+      "severity": "P2",
+      "title": "one backend emits module docstrings as symbol names",
+      "consequence": "index noise ingested without a filter"
+    }
+  ],
+  "discipline": "None of these was fixed while the benchmark that found them was running. Widening a heuristic to turn a benchmark green is how a tool ends up overfitted to the one repository it was tested on."
+}
