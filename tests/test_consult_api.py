@@ -165,23 +165,49 @@ class TheCoreIsALeaf(unittest.TestCase):
 
     def test_the_module_declares_no_intra_package_imports(self):
         """The runtime probe proves it for this import order; the syntax
-        tree proves it for every import order, including a lazy one."""
+        tree proves it for every import order, including a lazy one.
+
+        One import is deliberately lazy and therefore allowed: `main` pulls
+        argparse, which the hook never reaches. Anything expensive at module
+        level, and anything from tracelink anywhere, is a regression.
+        """
         import ast
         with open(os.path.join(SRC, "tracelink", "consult.py"),
                   encoding="utf-8") as fh:
             tree = ast.parse(fh.read())
-        imported = set()
-        for node in ast.walk(tree):
+
+        def names(node):
             if isinstance(node, ast.Import):
-                imported.update(a.name.split(".")[0] for a in node.names)
-            elif isinstance(node, ast.ImportFrom):
+                return {a.name.split(".")[0] for a in node.names}
+            if isinstance(node, ast.ImportFrom):
                 if node.level:  # `from . import x`
-                    imported.add("tracelink")
-                elif node.module:
-                    imported.add(node.module.split(".")[0])
-        self.assertNotIn("tracelink", imported,
+                    return {"tracelink"}
+                return {node.module.split(".")[0]} if node.module else set()
+            return set()
+
+        top = set()
+        for node in tree.body:
+            top |= names(node)
+        self.assertEqual(set(), top & set(self.FORBIDDEN),
+                         "expensive import at module level")
+
+        everywhere, lazy_argparse_in = set(), []
+        for node in ast.walk(tree):
+            found = names(node)
+            everywhere |= found
+            if "argparse" in found:
+                lazy_argparse_in.append(node)
+        self.assertNotIn("tracelink", everywhere,
                          "the leaf module imports the package")
-        self.assertEqual(set(), imported & set(self.FORBIDDEN))
+
+        inside_main = set()
+        for func in tree.body:
+            if isinstance(func, ast.FunctionDef) and func.name == "main":
+                for node in ast.walk(func):
+                    inside_main |= names(node)
+        self.assertTrue(lazy_argparse_in, "argparse should be imported lazily")
+        self.assertIn("argparse", inside_main,
+                      "argparse must be imported inside main(), nowhere else")
 
     def test_the_linker_shares_these_constants_instead_of_copying_them(self):
         from tracelink import linker

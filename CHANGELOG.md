@@ -44,6 +44,29 @@
   older interpreter is accidental compatibility, not a contract. Actions
   updated to the Node 24 generation (checkout@v7, setup-python@v7), and
   `compileall` now covers `src/` as well.
+- **`tracelink consult <target>` — the first public primitive.** The lookup
+  the plugin makes after every edit is now a command anyone can run: a path
+  or a symbol name, text for humans, `--json` for programs. It reads the
+  link state `link` wrote and nothing else, so it stays fast enough to sit
+  in an editor hook. The `consult: true` opt-in stays where it belongs — in
+  the plugin, whose job is to decide whether to speak inside somebody's
+  turn. The command answers whether or not the gate is open.
+- **One rule for reading a target, no heuristics.** A target that names
+  something on disk is a file; everything else is a symbol; `--file` and
+  `--symbol` overrule the rule. An exact symbol name wins outright, a tail
+  (`validate` → `payments.validate`) resolves only when it means exactly one
+  thing, and a name that means two is reported with both candidates and
+  never chosen for you.
+- **A published contract.** `--json` emits `schema_version: 1` — target,
+  hits, anchors, and an `error` code when there is one — versioned
+  separately from the sidecar's internal schema, because the protocol and
+  the algorithm that produces it evolve on different clocks. Internal
+  silence reasons are mapped onto published codes (a test keeps the mapping
+  total), stdout carries the document and nothing else, and the exit codes
+  are fixed: `0` answered, `2` unusable arguments, `3` no such file, `4`
+  ambiguous name, `5` no readable link state. A symbol nothing links exits
+  `0`, not `3`: the link state knows which symbols have findings, not which
+  symbols exist.
 - **A test that the property stays true**: no shipped source assigns
   `sys.argv`, every `main()` leaves the process argv byte-for-byte intact,
   each module is callable in-process on its own, and an explicit empty

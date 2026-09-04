@@ -75,6 +75,21 @@ cd "$WORK/project"
 "$VENV_TL" status --register "$WORK/FINDINGS.md" --vault "$WORK/vault" \
   --symbols "$WORK/symbols.json" --repo . >/dev/null
 
+echo "== the public primitive answers, in text and in json =="
+"$VENV_TL" consult src/parser.py --repo . --vault "$WORK/vault" \
+  | grep -q 'known findings about this file' \
+  || { echo "consult said nothing about a linked file"; exit 1; }
+"$VENV_TL" consult parse_payload --repo . --vault "$WORK/vault" --json \
+  > "$WORK/consult.json"
+"$VENV_PY" - "$WORK/consult.json" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1]))          # the whole of stdout, or it fails
+assert doc["schema_version"] == 1, doc
+assert doc["target"]["kind"] == "symbol", doc
+assert doc["hits"] and doc["hits"][0]["finding_id"], doc
+print("consult --json schema", doc["schema_version"], "ok")
+PY
+
 echo "== the vault the installed package produced is the real thing =="
 test -s "$WORK/vault/CODE-INDEX.md" || { echo "no CODE-INDEX.md"; exit 1; }
 grep -q 'RES-01' "$WORK/vault/CODE-INDEX.md" \

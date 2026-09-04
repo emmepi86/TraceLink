@@ -15,6 +15,7 @@ _COMMANDS = {
     "split": ("splitter", "turn a findings register into one note per finding"),
     "index": ("symbol_index", "build the symbol map (graphify | ctags | scan)"),
     "link": ("linker", "cross-link notes and code, both directions"),
+    "consult": ("consult", "what the vault knows about a file or symbol"),
     "status": ("status", "one-shot health of register, vault, index and links"),
     "lint": ("lint", "read-only quality gate over the findings register"),
     "hook": ("hook", "install a git post-commit hook that refreshes index and links"),
@@ -27,6 +28,7 @@ usage: tracelink <command> [options]
   index   {_COMMANDS['index'][1]}
   split   {_COMMANDS['split'][1]}
   link    {_COMMANDS['link'][1]}
+  consult {_COMMANDS['consult'][1]}
   status  {_COMMANDS['status'][1]}
   lint    {_COMMANDS['lint'][1]}
   hook    {_COMMANDS['hook'][1]}

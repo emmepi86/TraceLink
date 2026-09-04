@@ -177,6 +177,29 @@ against the cache, so hand edits are caught and repaired), which makes the
 re-run after a code change cheap enough to automate — see below. `--full`
 forces a complete pass.
 
+Then ask the vault what it knows, about a file or about a symbol:
+
+```bash
+tracelink consult src/payments.py            # a path
+tracelink consult payments.validate          # a symbol, exactly named
+tracelink consult validate                   # a tail, if it means one thing
+tracelink consult src/payments.py --json     # for another program
+```
+
+`consult` reads the link state `link` wrote and nothing else — no index
+build, no vault walk — so it is fast enough to sit in an editor hook, and it
+is the same call the Claude Code plugin makes. It resolves a bare target by
+one rule: a target that names something on disk is a file, everything else
+is a symbol, and `--file` / `--symbol` overrule the rule. A name that could
+mean two symbols is reported with both candidates and never chosen for you.
+
+With `--json`, stdout is the document and nothing else (schema 1; humans get
+stderr), and the exit code says what happened: `0` answered — including
+"nothing is written about this" — `2` unusable arguments, `3` no such file,
+`4` ambiguous name, `5` no readable link state. A symbol nothing links exits
+`0`, not `3`: the link state knows which symbols have findings, not which
+symbols exist, and this command does not assert what it cannot check.
+
 Two more commands close the loop:
 
 ```bash

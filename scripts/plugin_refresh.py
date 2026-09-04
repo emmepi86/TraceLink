@@ -212,9 +212,11 @@ def consult(project, payload_text):
         return ""
 
     _src_on_path()
-    from tracelink.consult import consult as look_up, render_text
+    from tracelink.consult import FILE, consult as look_up, render_text
 
-    context = render_text(look_up(project, file_path))
+    # kind=FILE explicitly: an edit is about a path, never a symbol,
+    # and the hook must not depend on what the path happens to look like.
+    context = render_text(look_up(project, file_path, kind=FILE))
     if not context:
         return ""
     return json.dumps({"hookSpecificOutput": {

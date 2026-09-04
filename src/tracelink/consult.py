@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 
 #: The linker's sidecar, written next to the vault. Shared with `linker`.
 STATE_FILE = ".tracelink-link-state.json"
@@ -49,22 +50,41 @@ SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 #: How far into a note to look for its heading before giving up.
 _HEAD_LINES = 200
 
+#: The two things a target can be. A caller may say which; otherwise
+#: `_kind_of` decides, deterministically and by one documented rule.
+FILE = "file"
+SYMBOL = "symbol"
+
+#: Exit codes of `tracelink consult`. Published, therefore fixed: a caller
+#: branching on them is entitled to keep working.
+EXIT_OK = 0          # answered — including "nothing is written about this"
+EXIT_USAGE = 2       # unusable arguments (argparse's own code)
+EXIT_NOT_FOUND = 3   # a file target that does not exist in the repository
+EXIT_AMBIGUOUS = 4   # the name means two or more things; never guessed
+EXIT_NO_STATE = 5    # no link-state, or one this version cannot read
+
+#: Version of the `--json` document. Independent of the sidecar's internal
+#: `schema_version`: the protocol we publish and the algorithm that produces
+#: it evolve on different clocks, and only one of them is a promise.
+JSON_SCHEMA_VERSION = 1
+
 
 class SymbolHit:
-    """One symbol a note links, at the line it was found on."""
+    """One symbol a note links, where it was found."""
 
-    __slots__ = ("name", "line")
+    __slots__ = ("name", "line", "path")
 
-    def __init__(self, name, line=None):
+    def __init__(self, name, line=None, path=None):
         self.name = name
         self.line = line if isinstance(line, int) else None
+        self.path = path
 
     def __eq__(self, other):
         return (isinstance(other, SymbolHit) and self.name == other.name
-                and self.line == other.line)
+                and self.line == other.line and self.path == other.path)
 
     def __repr__(self):
-        return f"SymbolHit({self.name!r}, {self.line!r})"
+        return f"SymbolHit({self.name!r}, {self.line!r}, {self.path!r})"
 
 
 class NoteHit:
@@ -102,21 +122,37 @@ class NoteHit:
 
 
 class ConsultResult:
-    """What the vault knows about one path.
+    """What the vault knows about one target.
 
-    `notes` is the ranked, capped list; `hidden` is how many more matched.
+    `input` is what the caller asked for, `kind` how it was read (`file` or
+    `symbol`) and `resolved` what it became — a repo-relative path, or the
+    linked symbol name. `notes` is the ranked, capped list and `hidden` how
+    many more matched.
+
     `silence` is None when notes were found and a reason code otherwise, so
-    "nothing is written about this file" is distinguishable from "the state
-    could not be read".
+    "nothing is written about this target" stays distinguishable from "the
+    state could not be read" and from "the name means two different things".
+    `candidates` carries those two things when it does.
     """
 
-    __slots__ = ("path", "notes", "hidden", "silence")
+    __slots__ = ("input", "kind", "resolved", "notes", "hidden", "silence",
+                 "candidates")
 
-    def __init__(self, path, notes=(), hidden=0, silence=None):
-        self.path = path
+    def __init__(self, resolved, notes=(), hidden=0, silence=None,
+                 kind=FILE, input=None, candidates=()):
+        self.resolved = resolved
+        self.kind = kind
+        self.input = resolved if input is None else input
         self.notes = tuple(notes)
         self.hidden = hidden
         self.silence = silence
+        self.candidates = tuple(candidates)
+
+    #: The historical name for `resolved`, kept because the rendered text
+    #: quotes it and the hook has printed it since 0.7.0.
+    @property
+    def path(self):
+        return self.resolved
 
     def __bool__(self):
         return bool(self.notes)
@@ -126,8 +162,9 @@ class ConsultResult:
         return len(self.notes) + self.hidden
 
     def __repr__(self):
-        return (f"ConsultResult({self.path!r}, notes={len(self.notes)}, "
-                f"hidden={self.hidden}, silence={self.silence!r})")
+        return (f"ConsultResult({self.resolved!r}, kind={self.kind!r}, "
+                f"notes={len(self.notes)}, hidden={self.hidden}, "
+                f"silence={self.silence!r})")
 
 
 def _relative(project, target):
@@ -221,23 +258,61 @@ def _rank(hit):
             hit.note_id)
 
 
-def consult(project, target, vault=None, limit=MAX_NOTES):
-    """What the vault knows about `target` (a path, absolute or relative).
+def _kind_of(project, target):
+    """Read a bare target as a file or as a symbol, by one rule.
 
-    Reads only the link-state, then the heads of the notes that matched.
-    Never raises for a missing, corrupt or wrong-schema state: that is a
-    `ConsultResult` with a `silence` reason and no notes.
+    A target that names something on disk is a file; so is anything holding
+    a path separator, because no symbol does. Everything else is a symbol.
+    The rule asks the filesystem rather than guessing from the spelling, and
+    `--file` / `--symbol` settle the case where the caller knows better.
     """
-    rel = _relative(project, target)
-    if rel is None:
-        return ConsultResult("", silence="no-target")
-    if vault is None:
-        vault = os.path.join(project, ".tracelink", "vault")
+    if "/" in target or os.sep in target:
+        return FILE
+    path = target if os.path.isabs(target) else os.path.join(project, target)
+    return FILE if os.path.exists(path) else SYMBOL
 
-    notes, reason = _read_state(vault)
-    if notes is None:
-        return ConsultResult(rel, silence=reason)
 
+def _linked_names(notes):
+    """Every symbol name the state links, mapped to the notes linking it."""
+    names = {}
+    for note_file, entry in notes.items():
+        if not isinstance(entry, dict):
+            continue
+        linked = entry.get("linked")
+        if not isinstance(linked, list):
+            continue
+        for name in linked:
+            if isinstance(name, str) and name:
+                names.setdefault(name, []).append(str(note_file))
+    return names
+
+
+def resolve_symbol(notes, target):
+    """(name, candidates) for a symbol target, resolved deterministically.
+
+    An exact name wins outright. Otherwise the target is tried as the tail
+    of a dotted name — `validate` finds `payments.validate` — and that only
+    counts when exactly one name matches. Two matches are two candidates and
+    no answer: the caller is told what the name could mean, and nothing is
+    chosen for them.
+    """
+    names = _linked_names(notes)
+    if target in names:
+        return target, ()
+    matches = sorted(n for n in names if n.endswith("." + target))
+    if len(matches) == 1:
+        return matches[0], ()
+    return None, tuple(matches)
+
+
+def _note_hits(notes, vault, keep):
+    """Notes whose linked symbols and file anchors survive `keep`.
+
+    `keep(name, location)` returns the SymbolHit to record or None, and
+    `keep.file_anchor(entry)` says whether the note anchors the target file.
+    Kept in one place because both target kinds walk the same state and the
+    difference between them is only which links count.
+    """
     hits = []
     for note_file, entry in notes.items():
         if not isinstance(entry, dict):
@@ -245,23 +320,171 @@ def consult(project, target, vault=None, limit=MAX_NOTES):
         linked, locations = entry.get("linked"), entry.get("locations")
         if not isinstance(linked, list) or not isinstance(locations, list):
             continue
-        symbols = [SymbolHit(name, loc.get("line"))
-                   for name, loc in zip(linked, locations)
-                   if isinstance(name, str) and isinstance(loc, dict)
-                   and loc.get("path") == rel]
-        anchors = entry.get("files")
-        file_anchor = isinstance(anchors, list) and rel in anchors
+        symbols = []
+        for name, loc in zip(linked, locations):
+            if not isinstance(name, str) or not isinstance(loc, dict):
+                continue
+            hit = keep(name, loc)
+            if hit is not None:
+                symbols.append(hit)
+        file_anchor = keep.file_anchor(entry)
         if not symbols and not file_anchor:
             continue
         note_file = str(note_file)
         note_id, status, severity, title = note_head(vault, note_file)
         hits.append(NoteHit(note_id, note_file, status, severity, title,
                             symbols, file_anchor))
+    return hits
+
+
+def _keep_in_file(rel):
+    def keep(name, loc):
+        if loc.get("path") == rel:
+            return SymbolHit(name, loc.get("line"), rel)
+        return None
+
+    def file_anchor(entry):
+        anchors = entry.get("files")
+        return isinstance(anchors, list) and rel in anchors
+
+    keep.file_anchor = file_anchor
+    return keep
+
+
+def _keep_symbol(wanted):
+    def keep(name, loc):
+        if name == wanted:
+            return SymbolHit(name, loc.get("line"), loc.get("path"))
+        return None
+
+    keep.file_anchor = lambda entry: False
+    return keep
+
+
+def consult(project, target, kind=None, vault=None, limit=MAX_NOTES):
+    """What the vault knows about `target` — a path or a symbol name.
+
+    `kind` may be `FILE` or `SYMBOL` to say which; left None, `_kind_of`
+    decides. Reads only the link-state, then the heads of the notes that
+    matched: no index build, no vault walk, no resolution against the
+    repository. `limit=None` returns every hit.
+
+    Never raises for a missing, corrupt or wrong-schema state, and never
+    picks between two meanings of a name: both are a `ConsultResult` with a
+    `silence` reason and no notes.
+    """
+    if not isinstance(target, str) or not target:
+        return ConsultResult("", silence="no-target",
+                             input=target if isinstance(target, str) else "")
+    if vault is None:
+        vault = os.path.join(project, ".tracelink", "vault")
+    if kind is None:
+        kind = _kind_of(project, target)
+
+    resolved = _relative(project, target) if kind == FILE else target
+    notes, reason = _read_state(vault)
+    if notes is None:
+        return ConsultResult(resolved, silence=reason, kind=kind,
+                             input=target)
+
+    if kind == FILE:
+        hits = _note_hits(notes, vault, _keep_in_file(resolved))
+    else:
+        name, candidates = resolve_symbol(notes, target)
+        if candidates:
+            return ConsultResult(target, silence="ambiguous-symbol",
+                                 kind=kind, input=target,
+                                 candidates=candidates)
+        if name is None:
+            return ConsultResult(target, silence="not-linked", kind=kind,
+                                 input=target)
+        resolved = name
+        hits = _note_hits(notes, vault, _keep_symbol(name))
 
     if not hits:
-        return ConsultResult(rel, silence="not-linked")
+        return ConsultResult(resolved, silence="not-linked", kind=kind,
+                             input=target)
     hits.sort(key=_rank)
-    return ConsultResult(rel, hits[:limit], max(0, len(hits) - limit))
+    shown = hits if limit is None else hits[:limit]
+    return ConsultResult(resolved, shown, len(hits) - len(shown), kind=kind,
+                         input=target)
+
+
+#: Internal silence reason -> the code the JSON document publishes. The two
+#: vocabularies are deliberately separate: `_read_state` may learn to say
+#: something new tomorrow without that becoming a promise today. A test
+#: asserts this mapping is total, so a new reason cannot leak unnamed.
+PUBLIC_ERROR = {
+    "no-link-state": "no_state",
+    "state-schema": "state_schema_unsupported",
+    "ambiguous-symbol": "ambiguous_target",
+    "no-target": "invalid_target",
+    "not-found": "target_not_found",
+    "not-linked": None,  # not an error: the vault simply says nothing
+}
+
+#: Public error code -> exit code.
+EXIT_FOR_ERROR = {
+    "no_state": EXIT_NO_STATE,
+    "state_schema_unsupported": EXIT_NO_STATE,
+    "ambiguous_target": EXIT_AMBIGUOUS,
+    "invalid_target": EXIT_USAGE,
+    "target_not_found": EXIT_NOT_FOUND,
+}
+
+
+def error_code(result):
+    """The published error code for a result, or None when it is an answer.
+
+    A result with no notes is not automatically an error: "nothing is
+    written about this file" is a true answer and exits 0.
+    """
+    if result.silence is None:
+        return None
+    return PUBLIC_ERROR.get(result.silence, "no_state")
+
+
+def exit_code(result):
+    """The process exit code for a result."""
+    code = error_code(result)
+    return EXIT_OK if code is None else EXIT_FOR_ERROR.get(code, EXIT_NO_STATE)
+
+
+def as_json(result):
+    """The `--json` document: schema 1, and only what schema 1 promises.
+
+    Deliberately small. Provenance, verification commits and finding
+    relations are later ministeps, and an optional field added to schema 1
+    breaks nobody — a field published too early and withdrawn does.
+    """
+    doc = {
+        "schema_version": JSON_SCHEMA_VERSION,
+        "target": {"input": result.input, "kind": result.kind,
+                   "resolved": result.resolved},
+        "hits": [{
+            "finding_id": note.note_id,
+            "status": note.status,
+            "severity": note.severity,
+            "title": note.title,
+            "anchors": _anchors(note, result),
+        } for note in result.notes],
+    }
+    code = error_code(result)
+    if code is not None:
+        error = {"code": code}
+        if result.candidates:
+            error["candidates"] = list(result.candidates)
+        doc["error"] = error
+    return doc
+
+
+def _anchors(note, result):
+    """Why this note came up, as data: the symbols, and the file itself."""
+    anchors = [{"kind": SYMBOL, "name": hit.name, "path": hit.path,
+                "line": hit.line} for hit in note.symbols]
+    if note.file_anchor:
+        anchors.append({"kind": FILE, "path": result.resolved})
+    return anchors
 
 
 def render_text(result):
@@ -272,6 +495,8 @@ def render_text(result):
     """
     if not result.notes:
         return ""
+    if result.kind == SYMBOL:
+        return _render_symbol_text(result)
     lines = [f"TraceLink — known findings about this file ({result.path}):"]
     for note in result.notes:
         tag = "/".join(p for p in (note.status, note.severity) if p) or "?"
@@ -288,3 +513,99 @@ def render_text(result):
     if result.hidden:
         lines.append(f"…and {result.hidden} more in CODE-INDEX.md")
     return "\n".join(lines)
+
+
+def _render_symbol_text(result):
+    """The same briefing for a symbol target, cited by location."""
+    lines = [f"TraceLink — known findings about this symbol "
+             f"({result.resolved}):"]
+    for note in result.notes:
+        tag = "/".join(p for p in (note.status, note.severity) if p) or "?"
+        head = f"- {note.note_id} [{tag}]" + (f" {note.title}"
+                                              if note.title else "")
+        where = ", ".join(_where(hit) for hit in note.symbols)
+        lines.append(f"{head} — at {where}" if where else head)
+    lines.append("(full notes: .tracelink/vault/<id>.md — read before "
+                 "assuming this area is clean)")
+    if result.hidden:
+        lines.append(f"…and {result.hidden} more in CODE-INDEX.md")
+    return "\n".join(lines)
+
+
+def _where(hit):
+    if hit.path and hit.line is not None:
+        return f"{hit.path}:L{hit.line}"
+    return hit.path or hit.name
+
+
+def main(argv=None, prog=None) -> int:
+    """`tracelink consult <target>` — the vault, asked about one thing.
+
+    argparse is imported here rather than at the top of the module on
+    purpose: this module is also the hot path of the edit hook, where
+    `import argparse` would cost more than the whole lookup. The CLI pays
+    for it; the hook never does.
+
+    With `--json`, stdout carries the JSON document and nothing else — every
+    human word goes to stderr — because the first consumers of this command
+    are other programs.
+    """
+    import argparse
+
+    ap = argparse.ArgumentParser(
+        prog=prog,
+        description="What the findings vault already knows about a file or "
+                    "a symbol. Reads the link state written by `link`; it "
+                    "never rebuilds the index.")
+    ap.add_argument("target", help="a path, or a symbol name "
+                                   "(`payments.validate`, or `validate` when "
+                                   "that is unambiguous)")
+    ap.add_argument("--repo", default=".", help="repository root (default .)")
+    ap.add_argument("--vault", default=None,
+                    help="vault holding the link state "
+                         "(default <repo>/.tracelink/vault)")
+    ap.add_argument("--file", dest="kind", action="store_const", const=FILE,
+                    help="read the target as a path, whatever it looks like")
+    ap.add_argument("--symbol", dest="kind", action="store_const",
+                    const=SYMBOL, help="read the target as a symbol name")
+    ap.add_argument("--json", action="store_true",
+                    help="print the machine-readable document instead")
+    ap.set_defaults(kind=None)
+    args = ap.parse_args(argv)
+
+    kind = args.kind or _kind_of(args.repo, args.target)
+    if kind == FILE and not os.path.exists(
+            args.target if os.path.isabs(args.target)
+            else os.path.join(args.repo, args.target)):
+        result = ConsultResult(_relative(args.repo, args.target) or
+                               args.target, silence="not-found", kind=FILE,
+                               input=args.target)
+    else:
+        result = consult(args.repo, args.target, kind=kind, vault=args.vault,
+                         limit=None)
+
+    if args.json:
+        print(json.dumps(as_json(result), indent=2, ensure_ascii=False))
+    elif result.notes:
+        print(render_text(result))
+
+    code = error_code(result)
+    if code == "ambiguous_target":
+        print(f"{args.target!r} could mean: "
+              + ", ".join(result.candidates)
+              + " — say which with --symbol", file=sys.stderr)
+    elif code == "target_not_found":
+        print(f"no such file: {args.target}", file=sys.stderr)
+    elif code == "no_state":
+        print(f"no link state under {args.vault or 'the vault'} — run "
+              "`tracelink link` first", file=sys.stderr)
+    elif code == "state_schema_unsupported":
+        print("the link state was written by another version of tracelink — "
+              "run `tracelink link` to rewrite it", file=sys.stderr)
+    elif not args.json and not result.notes:
+        print(f"nothing recorded about {result.resolved}", file=sys.stderr)
+    return exit_code(result)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
