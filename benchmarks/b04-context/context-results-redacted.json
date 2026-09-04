@@ -1,0 +1,57 @@
+{
+  "benchmark": "b04-context",
+  "target": {
+    "description": "the same large private multi-tenant SaaS backend as b01 and b03",
+    "redacted": [
+      "names",
+      "paths",
+      "symbols",
+      "the findings"
+    ]
+  },
+  "method": {
+    "targets": 43,
+    "authored": "each target carries must_include / acceptable sets written by hand from the b03 gold and an independent scan; no TraceLink output was used to build them",
+    "evidence_check": "a finding counts as supported at a target only when the anchor that brought it there is written as code by the AUTHOR — the managed block is cut out first, or the tool would certify its own evidence"
+  },
+  "headline": {
+    "context_recall": "56/56 (100%)",
+    "context_precision": "92%",
+    "false_authority_exposure": 3,
+    "target": 0
+  },
+  "verdicts": {
+    "useful": 56,
+    "benign noise": 2,
+    "false authority": 3,
+    "acceptable": 3
+  },
+  "shape": {
+    "findings_per_target_median": 1,
+    "findings_per_target_max": 9,
+    "briefing_bytes_median": 274,
+    "briefing_bytes_max": 1126,
+    "duplicates": 0,
+    "first_useful_position_median": 1
+  },
+  "failure_classes": {
+    "A_wrong_evidence": {
+      "occurrences": 3,
+      "distinct_findings": 2,
+      "cause": "a bare word in the prose that also names an indexed symbol",
+      "registered_as": "F6",
+      "fixed": false
+    },
+    "B_irrelevant_context": {
+      "occurrences": 2,
+      "cause": "one of them names a path in order to DENY a relationship, and is anchored to it anyway — negation is not read, by design",
+      "registered_as": "F8",
+      "fixed": false
+    },
+    "C_bad_ordering": {
+      "occurrences": 0,
+      "note": "on the busiest target all nine findings were useful and in anchor order; no data supports a ranking or budget change yet"
+    }
+  },
+  "discipline": "resolver frozen for this benchmark; two flaws found in the SCORER were fixed and are described, not hidden"
+}
