@@ -437,6 +437,15 @@ that is stale, or one whose freshness cannot be established.
 moved, with nothing to indicate anything is wrong. Steps 1 and 3 are cheap;
 wire them into a hook or a make target.
 
+## What it does not do
+
+Written down on purpose, with reasons, in
+[`docs/LIMITATIONS.md`](docs/LIMITATIONS.md): low-information names that
+produce a conservative ambiguity, a reference that is not a relationship,
+freshness that can only sometimes be proved cheaply, and what the
+benchmarks do and do not establish — including an experiment that was
+halted rather than published.
+
 ## What this is not
 
 It does not read your code semantically, rank findings, or tell you what to fix.

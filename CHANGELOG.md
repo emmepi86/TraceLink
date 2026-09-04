@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased — 0.8.1
+## Unreleased — 0.9.0
+
+The technical roadmap is frozen here. Two findings are closed as documented
+limitations rather than fixed, both in `docs/LIMITATIONS.md`: a bare
+low-information name may still produce a conservative *ambiguity* (it can no
+longer produce a link, so what remains is over-refusal, and a stop-word list
+would trade that for a language- and project-specific heuristic needing
+exceptions); and a reference is not a relationship — TraceLink establishes
+that a finding refers to something, never what the sentence around it
+asserts.
 
 - **The CLI no longer depends on process global state.** Dispatch used to
   rewrite `sys.argv` before calling a sub-command's `main()`, because each
