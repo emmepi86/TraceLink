@@ -286,6 +286,26 @@
   a repository should have, so a score would be a number about nothing. The
   work happens only on the silent path, and the edit hook stays quiet —
   saying "I know nothing about this file" after every edit is noise.
+- **Freshness can now be proved without re-reading every file — where that
+  is actually cheaper.** Verifying an index hashed everything it indexed:
+  2.5 s on a real repository, 6 s on a large one, three quarters of `link`'s
+  floor. Git already knows whether tracked files changed, so it is asked
+  first: HEAD's tree identity, the candidate name set (tracked, untracked
+  **and ignored**, filtered by the indexer's own scope rule), and a hash of
+  only what git cannot vouch for. Every doubt costs the full hash instead —
+  a partial index, a dirty scope, `assume-unchanged` or `skip-worktree` on a
+  file in scope, sparse checkout, no git. Reading no longer writes either:
+  every git call passes `--no-optional-locks`, because `git status` refreshes
+  the index by default and that writes inside `.git`.
+  The acceptance test is differential — same verdict as the hash, every case
+  — and it caught a false `fresh` (a truncated index that git could honestly
+  call unchanged, because the two facts were about different sets), an
+  optimisation that silently broke the ignored-file guarantee, and an
+  instrument that reports a touched-but-identical file as changed. Measured:
+  4.1× where the indexed scope is most of the repository; on a repository
+  where 2 700 files are indexed out of 27 000 tracked, git costs more than
+  the hash it would replace, so the fast path declines. That threshold picks
+  which correct road to walk, never which answer to give.
 - **A test that the property stays true**: no shipped source assigns
   `sys.argv`, every `main()` leaves the process argv byte-for-byte intact,
   each module is callable in-process on its own, and an explicit empty

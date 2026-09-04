@@ -933,6 +933,74 @@ def verify_freshness(payload, repo, index_path=None):
     return index
 
 
+def _proven_unchanged_by_git(repo, repo_meta, scope):
+    """True only when git can prove the scope is byte-identical to index time.
+
+    The proof has four parts and needs all of them:
+
+      the index is not partial                 (a truncated index never read
+                                                most of the tree, so no fact
+                                                about the tree can vouch for
+                                                it — found by the differential
+                                                test, which is the only reason
+                                                it was found)
+      the index was taken on a clean tree      (else its fingerprint covers
+                                                uncommitted content, which no
+                                                commit can vouch for)
+      HEAD's tree identity is the recorded one (the committed content matches)
+      the candidate NAME set is the recorded one (nothing appeared or left —
+                                                including ignored files, which
+                                                git hides and the indexer may
+                                                well read)
+      nothing in scope is dirty                (the working tree IS the commit
+                                                for the tracked files)
+      the untracked and ignored files the      (git cannot speak for these, so
+      indexer reads still hash the same         they are read — and only they)
+
+    Anything missing returns None, and None means hash. There is no partial
+    credit here: `fresh` is a claim about every file the index read, and
+    three quarters of a proof is not a proof.
+    """
+    recorded_tree = repo_meta.get("tree_identity")
+    recorded_names = repo_meta.get("scope_names_fingerprint")
+    recorded_outside = repo_meta.get("outside_git_fingerprint")
+    if not recorded_tree or not recorded_names or not recorded_outside:
+        return None                     # an index from before this evidence
+    if repo_meta.get("dirty") is not False:
+        return None
+    try:
+        from .symbol_index import git_evidence, tracked_count
+    except Exception:  # noqa: BLE001
+        return None
+
+    # Which correct path is cheaper, never which answer is right. Asking git
+    # costs in proportion to the REPOSITORY — it enumerates tracked, untracked
+    # and ignored names, and a vendored subtree is enormous. Hashing costs in
+    # proportion to the INDEXED SCOPE. On a repository whose scope is most of
+    # it, git wins by 5x; on one where 2 700 files are indexed out of 27 000
+    # tracked and 17 000 ignored, it loses by 2x. Measured both ways, and the
+    # verdict is identical either way — this only picks the road.
+    indexed = repo_meta.get("files_fingerprinted") or 0
+    tracked = tracked_count(os.path.realpath(repo))
+    if not indexed or tracked is None:
+        return None
+    if indexed * 4 < tracked:
+        return None
+
+    evidence = git_evidence(os.path.realpath(repo), scope)
+    if not evidence:
+        return None                     # no git, or git is a weak observer
+    if evidence["tree_identity"] != recorded_tree:
+        return None
+    if evidence["names_fingerprint"] != recorded_names:
+        return None
+    if evidence["dirty_in_scope"]:
+        return None
+    if evidence["outside_git_fingerprint"] != recorded_outside:
+        return None
+    return True
+
+
 def _verify_index_freshness(payload, repo, index_path=None):
     """Compare an index against the repository it claims to describe."""
     try:
@@ -971,6 +1039,14 @@ def _verify_index_freshness(payload, repo, index_path=None):
     common = dict(partial=partial, indexed_commit=idx_commit,
                   current_commit=cur_commit, indexed_dirty=idx_dirty,
                   current_dirty=cur_dirty, indexed_fingerprint=idx_fp)
+
+    # Before re-reading every byte: can git prove the files are the ones the
+    # index saw? Only when it can prove it — the check returns None for
+    # every doubt, and doubt costs the full hash, never a weaker claim.
+    proven = (None if partial else
+              _proven_unchanged_by_git(repo, repo_meta, indexing.get("scope")))
+    if proven:
+        return Freshness("fresh", ["git-tree-identity"], **common)
 
     # The fingerprint is the strongest evidence: it covers uncommitted work and
     # repositories with no VCS at all, so it is checked first and it decides.

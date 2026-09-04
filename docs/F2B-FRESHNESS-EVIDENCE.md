@@ -118,3 +118,54 @@ ministep, with the detection matrix above as its acceptance test.
 **Not adopted:** `git status` alone (blind to untracked content), tree
 identity alone (blind to the working tree), and anything keyed on mtime or
 size, which remain accelerators and never grounds for `fresh`.
+
+
+---
+
+# Implementation, and what it cost to be right
+
+Shipped. The differential test — *same verdict as the full hash, every
+case* — was the acceptance criterion, and it earned its keep three times.
+
+**It caught a false `fresh`.** At 50 000 files the fast path said fresh and
+the hash said stale. The scan had truncated at its file limit, so the index
+had never read most of the tree: git could honestly report the tree
+unchanged while the index was missing half of it. *The two facts were about
+different sets.* A partial index now never takes the fast path.
+
+**It caught an optimisation that broke a guarantee.** `git ls-files
+--others --ignored --directory` collapses a wholly-ignored tree to one
+entry, which makes the enumeration cheap — and makes the collapsed entry
+extensionless, so an ignored *file* the indexer reads vanishes from the
+candidate set and its appearance stops being detectable. Reverted.
+
+**It caught the wrong instrument.** `git diff-index` trusts stat
+information, so a file whose mtime moved but whose bytes did not comes back
+as changed. That would have sent the most common case — a checkout, a touch
+— down the slow path forever. `git status` compares content; it is used
+instead, with the untracked walk switched off because those names already
+come from `ls-files --others`.
+
+## Where it pays, and where it does not
+
+| repository | fast path | full hash | |
+|---|---:|---:|---|
+| synthetic, 10 000 files, scope = repo | **0.29 s** | 1.18 s | 4.1× |
+| the b01 codebase, 2 737 indexed of 27 000 tracked | declines | 0.67 s | — |
+
+Asking git costs in proportion to the **repository**: it enumerates
+tracked, untracked and ignored names, and a vendored subtree is enormous.
+Hashing costs in proportion to the **indexed scope**. Where the scope is
+most of the repository git wins several times over; where 2 700 files are
+indexed out of 27 000 tracked and 17 000 ignored, git loses by two.
+
+So the fast path is taken only when the scope is at least a quarter of what
+git tracks. That threshold picks **which correct road to walk, never which
+answer to give** — the differential test asserts both roads agree, and the
+b01 measurement above is the fast path declining and costing nothing.
+
+The projected "6.4×" of the analysis above was measured *without* the
+guardrails the design then required: the `assume-unchanged` inventory, the
+ignored enumeration, the scope filter. Adding them ate the margin on that
+repository. The analysis was not wrong to project it — it was wrong to
+project it from a probe simpler than the thing it was modelling.

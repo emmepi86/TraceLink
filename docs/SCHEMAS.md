@@ -175,6 +175,23 @@ Rejection is per location. One bad path does not discard ten thousand good
 ones; every path being bad is a configuration answer, and the index is
 refused rather than written.
 
+### Evidence that lets the hash be skipped
+
+The index records three more facts about the repository, used only to
+decide whether every file must be re-read:
+
+```json
+"tree_identity": "…",              // HEAD's tree at index time
+"scope_names_fingerprint": "sha256:…",  // the candidate set, names only
+"outside_git_fingerprint": "sha256:…"   // content of what git cannot vouch for
+```
+
+They can never make a claim the content fingerprint would not: a verifier
+takes the cheap road only when git proves the scope byte-identical, and
+falls back to hashing for every doubt — a partial index, a dirty scope, a
+missing evidence field, `assume-unchanged` or `skip-worktree` on a file in
+scope, sparse checkout, or no git at all.
+
 ### Freshness, in two parts
 
 An index carries two separate claims, and `link`, `status` and `sync`

@@ -36,12 +36,21 @@ from typing import Dict, Optional, Tuple
 # repository fingerprint and provenance (schema v3)
 # --------------------------------------------------------------------------- #
 
-def _git(repo, *args):
+def _git(repo, *args, raw=False):
+    """Ask git, without letting the question change the repository.
+
+    `--no-optional-locks` is not decoration: `git status` refreshes the
+    index by default, which writes inside `.git`. A tool that promises to
+    only read the repository it observes must not leave a trace in it, and
+    a benchmark that measures the read must not be measuring a write.
+    """
     try:
         import subprocess
-        r = subprocess.run(["git", "-C", repo, *args],
-                           capture_output=True, text=True, timeout=10)
-        return r.stdout.strip() if r.returncode == 0 else None
+        r = subprocess.run(["git", "--no-optional-locks", "-C", repo, *args],
+                           capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            return None
+        return r.stdout if raw else r.stdout.strip()
     except Exception:  # noqa: BLE001
         return None
 
@@ -132,6 +141,121 @@ def config_fingerprint(config):
     blob = _j.dumps(config, sort_keys=True, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
+
+
+def _sha_text(text):
+    import hashlib
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def in_scope(name, scope):
+    """Would the indexer consider this path? Same rule as `discover_scope`,
+    applied to a name instead of to a walk."""
+    if (scope or {}).get("kind") != "extensions":
+        return False
+    if os.path.splitext(name)[1] not in set(scope.get("extensions") or []):
+        return False
+    skip = set(scope.get("exclude") or []) | set(_SKIP_DIRS)
+    parts = name.split("/")[:-1]
+    return not any(part in skip or part.startswith(".") for part in parts)
+
+
+def tracked_count(repo):
+    """How many files git tracks, or None. One cheap call, used to decide
+    whether asking git about everything is cheaper than hashing the scope."""
+    listing = _git(repo, "ls-files", raw=True)
+    return None if listing is None else len(listing.splitlines())
+
+
+def git_evidence(repo, scope):
+    """What git can honestly witness about the scope right now, or None.
+
+    None means "ask the filesystem instead". It is returned whenever git
+    is absent, or present but a weaker observer than it looks:
+
+      * `assume-unchanged` / `skip-worktree` — flags whose entire purpose is
+        to make git stop noticing changes to a file. A fast path over those
+        would report `fresh` about a file nobody is watching.
+      * sparse checkout — the working tree does not contain what the index
+        says it does.
+      * an unborn or detached-without-commit HEAD — nothing to compare with.
+
+    The candidate set is built from git's own inventory — tracked, untracked
+    AND ignored — then filtered by the indexer's scope rule. Ignored matters:
+    a generated file git hides is a file TraceLink may well index, and a
+    check that never looked at it would miss it appearing.
+    """
+    tree = _git(repo, "rev-parse", "HEAD^{tree}")
+    if not tree:
+        return None
+    if (_git(repo, "config", "--get", "core.sparseCheckout") or "").lower() \
+            == "true":
+        return None
+
+    listing = _git(repo, "ls-files", "-v", raw=True)
+    if listing is None:
+        return None
+    tracked, unobservable = [], []
+    for line in listing.splitlines():
+        if len(line) < 3 or line[1] != " ":
+            continue
+        flag, name = line[0], line[2:]
+        # lowercase = assume-unchanged, S = skip-worktree
+        if flag.islower() or flag == "S":
+            unobservable.append(name)
+        tracked.append(name)
+    if any(in_scope(name, scope) for name in unobservable):
+        return None
+
+    others = _git(repo, "ls-files", "--others", "--exclude-standard",
+                  raw=True) or ""
+    # Not `--directory`: collapsing a wholly-ignored tree to one entry makes
+    # the enumeration cheap and the guarantee false — the collapsed entry has
+    # no extension, so an ignored FILE the indexer reads vanishes from the
+    # candidate set and its appearance stops being detectable. Measured and
+    # reverted; the differential test caught it.
+    ignored = _git(repo, "ls-files", "--others", "--ignored",
+                   "--exclude-standard", raw=True) or ""
+    candidates = sorted({name for name in
+                         tracked + others.splitlines() + ignored.splitlines()
+                         if in_scope(name, scope)})
+
+    # `status`, not `diff-index`: the latter trusts stat information, so a
+    # file whose mtime moved but whose bytes did not comes back as changed —
+    # measured, and it would send the common case (a checkout, a touch) down
+    # the slow path for nothing. `status` compares the content. Untracked
+    # files are excluded from the walk because their names are already known
+    # from `ls-files --others` above.
+    changed = {line[3:].strip().strip('"')
+               for line in (_git(repo, "status", "--porcelain=v1",
+                                 "--untracked-files=no", raw=True)
+                            or "").splitlines() if line.strip()}
+    scope_dirty = sorted(name for name in changed if in_scope(name, scope))
+    tracked_set = set(tracked)
+    # Anything in scope that git does not track cannot be vouched for by the
+    # tree identity, however clean the repository looks — so it is read.
+    # This is the whole cost of the fast path: not every indexed file, only
+    # the ones git cannot speak for. On a repository whose sources are all
+    # committed, that is nothing at all.
+    outside_git = [name for name in candidates if name not in tracked_set]
+    import hashlib
+    digest = hashlib.sha256()
+    for name in outside_git:
+        digest.update(name.encode("utf-8"))
+        digest.update(b"\0")
+        try:
+            with open(os.path.join(repo, name), "rb") as fh:
+                for chunk in iter(lambda: fh.read(65536), b""):
+                    digest.update(chunk)
+        except OSError:
+            digest.update(b"\0unreadable\0")
+        digest.update(b"\n")
+    return {"tree_identity": tree,
+            "names_fingerprint": _sha_text("\n".join(candidates)),
+            "outside_git_fingerprint": "sha256:" + digest.hexdigest(),
+            "candidates": candidates,
+            "dirty_in_scope": scope_dirty,
+            "untracked_in_scope": outside_git}
 
 
 def discover_scope(repo, scope):
@@ -662,12 +786,18 @@ def main(argv=None, prog=None) -> int:
     total = sum(len(v) for v in syms.values())
     ambiguous = sum(1 for v in syms.values() if len(v) > 1)
     repo_abs = os.path.abspath(args.repo)
+    evidence = None
     vcs, commit, dirty = repo_state(repo_abs)
     fp, counted, fp_warnings = fingerprint(repo_abs, files=considered)
     scope = ({"kind": "extensions",
               "extensions": sorted({e for e, _rx in _DEF_PATTERNS}),
               "exclude": sorted(_SKIP_DIRS)} if used == "scan"
              else {"kind": used})
+    # What git can witness about this scope, recorded so the verifier can
+    # decide whether it may skip re-reading the files. None when git is
+    # absent or is a weaker observer than it looks; the verifier then has
+    # only the content fingerprint, which is what it has always had.
+    evidence = git_evidence(repo_abs, scope)
     config = {"backend": used, "exclude": sorted(_SKIP_DIRS), "max_files": 20000}
     if used == "scan":
         # The regexes ARE the scan's configuration: change them and the same
@@ -691,6 +821,19 @@ def main(argv=None, prog=None) -> int:
             "repository": {"root": ".", "vcs": vcs, "commit": commit,
                            "dirty": dirty, "fingerprint": fp,
                            "files_fingerprinted": counted,
+                           # What the cheap check compares against. Both are
+                           # about the SET and the COMMIT, never about
+                           # content: the content evidence is `fingerprint`,
+                           # and these only say when it can be trusted
+                           # without re-reading every byte.
+                           "tree_identity": (evidence or {}).get(
+                               "tree_identity"),
+                           "scope_names_fingerprint": (evidence or {}).get(
+                               "names_fingerprint"),
+                           # Content of what git cannot vouch for — untracked
+                           # and ignored files the indexer nonetheless reads.
+                           "outside_git_fingerprint": (evidence or {}).get(
+                               "outside_git_fingerprint"),
                            "scope": "symbol-index"},
             "indexing": {"backend": used, "backend_version": None,
                          "partial": partial,
