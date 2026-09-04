@@ -1,0 +1,79 @@
+{
+  "benchmark": "b03-gold",
+  "target": {
+    "description": "the same large private multi-tenant SaaS backend as b01",
+    "redacted": [
+      "names",
+      "paths",
+      "symbols",
+      "the findings themselves"
+    ]
+  },
+  "gold_set": {
+    "findings": 50,
+    "authored": "by hand, by reading the code and its history. No TraceLink output was consulted while writing the expectations.",
+    "expected": {
+      "match": 32,
+      "ambiguous": 10,
+      "no-assertion": 8
+    },
+    "adversarial": 11,
+    "categories": [
+      "ambiguity",
+      "architecture",
+      "closed-still-true",
+      "compliance",
+      "concurrency",
+      "conflict",
+      "constraint",
+      "disambiguation",
+      "excluded",
+      "gotcha",
+      "infrastructure",
+      "integration",
+      "looks-cleanable",
+      "moved",
+      "procedure",
+      "prose",
+      "qualified",
+      "renamed",
+      "stopword",
+      "workaround"
+    ]
+  },
+  "headline": {
+    "false_authoritative_assertions": 1,
+    "target": 0,
+    "supported_knowledge_recovered": "32/32"
+  },
+  "outcomes": {
+    "correct match": 32,
+    "correct ambiguity": 9,
+    "unsupported assertion": 1,
+    "correct no-assertion": 7,
+    "false ambiguity": 1
+  },
+  "deviations": [
+    {
+      "outcome": "unsupported assertion",
+      "cause": "a bare word in the prose coincided with a pytest fixture function defined in the test suite, and was linked as an anchor the author never asserted",
+      "classification": "resolver limitation",
+      "registered_as": "F6",
+      "fixed": false
+    },
+    {
+      "outcome": "false ambiguity",
+      "cause": "a two-letter-ish generic name, defined in several test modules, was reported as ambiguous rather than filtered as prose. No anchor was asserted, so nothing false was claimed",
+      "classification": "resolver limitation (stop-word list)",
+      "registered_as": "F7",
+      "fixed": false
+    }
+  ],
+  "gold_corrections": [
+    {
+      "count": 2,
+      "why": "two names the gold expected to be unique are defined in both the backend and the frontend. The expectations had been written from a Python-only scan while the index covers TypeScript too — the tool was right and the gold was wrong, corrected and marked as corrected in the private gold file."
+    }
+  ],
+  "discipline": "the resolver was not changed while this ran"
+}
