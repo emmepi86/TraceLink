@@ -125,6 +125,32 @@ repaired in place and not reported as a plain match: `link` rebuilds it,
 it appears in a published document only under `--debug`, and it is free to
 change when the resolver is refactored.
 
+### Coordinates: `path_integrity`
+
+Separate from `partial`, and for a reason — `partial` says how much of the
+repository an index covered, `path_integrity` says whether its coordinates
+name that repository at all:
+
+```json
+"path_integrity": {"state": "ok" | "invalid",
+                   "checked_locations": 13866,
+                   "invalid_locations": 0}
+```
+
+Every location is validated where it enters, at indexing: a relative path is
+resolved against `--repo`, an absolute one is accepted only if it resolves
+inside it, and a missing file or a path escaping the root (symlinks
+included — `realpath` decides) is invalid and dropped. **Nothing is
+guessed**: a path that would resolve against the parent directory, the
+artefact's own directory, or by suffix stays invalid, because repairing a
+coordinate error into a coordinate heuristic is how the next mismatch
+resolves silently to the wrong file. The fix for a mismatch is to point
+`--repo` at the base the backend records against.
+
+Rejection is per location. One bad path does not discard ten thousand good
+ones; every path being bad is a configuration answer, and the index is
+refused rather than written.
+
 ### Freshness, in two parts
 
 An index carries two separate claims, and `link`, `status` and `sync`

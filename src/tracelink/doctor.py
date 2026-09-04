@@ -144,6 +144,36 @@ def _upstream_check(project, values):
                  "cannot confirm it, so freshness reads `unknown`")
 
 
+def _coordinates_check(project, values):
+    """Do the index's coordinates name files in this repository?
+
+    Not the same question as completeness. An index can cover the whole
+    repository and still record every path against the wrong base.
+    """
+    symbols = _config.resolve(project, values, "symbols")
+    if not os.path.exists(symbols):
+        return None
+    try:
+        with open(symbols, encoding="utf-8") as fh:
+            integrity = ((json.load(fh).get("indexing") or {})
+                         .get("path_integrity") or {})
+    except Exception:  # noqa: BLE001
+        return None
+    invalid = integrity.get("invalid_locations")
+    if not integrity:
+        return Check(WARN, "index coordinates checked",
+                     "index predates the check",
+                     "tracelink sync")
+    if not invalid:
+        return Check(OK, "index coordinates",
+                     f"{integrity.get('checked_locations', 0)} locations "
+                     "name files in the repository")
+    return Check(WARN, "index coordinates",
+                 f"{invalid} location(s) named no file here and were dropped",
+                 "check that --repo names the base the backend's paths are "
+                 "relative to")
+
+
 def _backend_check(project, values):
     backend = values["backend"]
     if backend == "scan":
@@ -200,6 +230,9 @@ def diagnose(project, values):
     upstream = _upstream_check(project, values)
     if upstream is not None:
         checks.append(upstream)
+    coordinates = _coordinates_check(project, values)
+    if coordinates is not None:
+        checks.append(coordinates)
     checks.extend(_git_checks(project))
     return checks
 

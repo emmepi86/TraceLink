@@ -172,6 +172,21 @@
   before this version has no upstream block and reads as `unknown` too.
   A tree with uncommitted edits is `unknown` rather than `stale`: absence of
   evidence of correspondence is not evidence of divergence.
+- **No anchor may point at a path TraceLink cannot find.** Benchmark 01
+  (F4) linked 104 symbols to locations that resolved to nothing: the
+  artefact recorded paths relative to the repository root while its own
+  position forced `--repo` one level below, and the only signal was
+  `index_completeness: partial`, which is about something else. Locations
+  are now validated at indexing — relative against `--repo`, absolute only
+  if inside it, missing files and paths escaping the root (symlinks
+  included) rejected — and reported as `path_integrity`, separate from
+  completeness. **Nothing is guessed**: the wrong base is refused, never
+  repaired, because a coordinate heuristic would resolve the next mismatch
+  silently to the wrong file. Rejection is per location, so one bad path
+  does not discard the good ones; every path being bad refuses the index
+  with the reason. On the repository that produced the finding, TraceLink
+  now says `10458 of 10458 locations do not name a file inside <repo>` and
+  exits 1, where it used to write 104 confident links.
 - **A test that the property stays true**: no shipped source assigns
   `sys.argv`, every `main()` leaves the process argv byte-for-byte intact,
   each module is callable in-process on its own, and an explicit empty

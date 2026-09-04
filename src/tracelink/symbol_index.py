@@ -513,6 +513,67 @@ def verify_upstream(provenance, repo):
     return out
 
 
+def validate_locations(symbols, repo, considered=()):
+    """Drop every location that does not name a file inside `repo`.
+
+    The ingestion boundary, and the only place coordinates are checked. A
+    backend can record paths in whatever base it likes; what TraceLink may
+    not do is assert an anchor against a path it cannot find. Benchmark 01
+    (F4) linked 104 symbols to locations that resolved to nothing, because
+    the artefact's paths were relative to the repository root while the
+    artefact's own position forced `--repo` one level below it.
+
+    **Nothing is guessed.** A path that would resolve against the parent
+    directory, against the artefact's directory, or by matching a suffix is
+    still invalid here: a coordinate error must not be repaired into a
+    coordinate heuristic, or the next mismatch resolves silently to the
+    wrong file. The fix for a mismatch is to point `--repo` at the base the
+    artefact actually uses.
+
+    Returns (kept symbols, kept considered, report).
+    """
+    root = os.path.realpath(repo)
+    verdicts = {}          # path -> bool, so a file shared by 40 symbols is
+                           # stat'd once
+
+    def usable(path):
+        if path in verdicts:
+            return verdicts[path]
+        full = path if os.path.isabs(path) else os.path.join(root, path)
+        resolved = os.path.realpath(full)
+        inside = (resolved == root
+                  or resolved.startswith(root + os.sep))
+        verdicts[path] = inside and os.path.isfile(resolved)
+        return verdicts[path]
+
+    kept, checked, rejected = {}, 0, 0
+    examples = []
+    for name, locations in symbols.items():
+        surviving = []
+        for location in locations:
+            checked += 1
+            path = location.get("path")
+            if isinstance(path, str) and usable(path):
+                surviving.append(location)
+                continue
+            rejected += 1
+            if len(examples) < 5:
+                examples.append(path)
+        if surviving:
+            kept[name] = surviving
+
+    report = {"state": "ok" if not rejected else "invalid",
+              "checked_locations": checked,
+              "invalid_locations": rejected,
+              "examples": examples}
+    if rejected:
+        report["reason"] = ("paths do not name a file inside --repo; the "
+                            "backend may be recording them against another "
+                            "base")
+    kept_considered = [path for path in considered if usable(path)]
+    return kept, kept_considered, report
+
+
 def main(argv=None, prog=None) -> int:
     ap = argparse.ArgumentParser(
         prog=prog, description="Build a symbol -> file:line map.")
@@ -527,6 +588,24 @@ def main(argv=None, prog=None) -> int:
         print(f"  note: {n}", file=sys.stderr)
     if not syms:
         print("no symbols found by any backend", file=sys.stderr)
+        return 1
+
+    repo_root = os.path.abspath(args.repo)
+    syms, considered, integrity = validate_locations(syms, repo_root,
+                                                     considered)
+    if integrity["invalid_locations"]:
+        print(f"  note: {integrity['invalid_locations']} of "
+              f"{integrity['checked_locations']} locations do not name a file "
+              f"inside {args.repo} and were dropped", file=sys.stderr)
+        for example in integrity["examples"]:
+            print(f"    e.g. {example}", file=sys.stderr)
+    if not syms:
+        # Every coordinate the backend produced was unusable. That is a
+        # configuration answer, not an empty repository: say so, and do not
+        # write an index whose every anchor would point at nothing.
+        print(f"every location the {used} backend produced falls outside "
+              f"{args.repo} — check that --repo names the base those paths "
+              f"are relative to", file=sys.stderr)
         return 1
     total = sum(len(v) for v in syms.values())
     ambiguous = sum(1 for v in syms.values() if len(v) > 1)
@@ -569,6 +648,10 @@ def main(argv=None, prog=None) -> int:
                          # month-old artefact is new and out of date at once.
                          "upstream": verify_upstream(provenance,
                                                      os.path.realpath(repo_abs)),
+                         # Separate from `partial`, which is about how much
+                         # of the repository was covered. This is about
+                         # whether the coordinates point at it at all.
+                         "path_integrity": integrity,
                          # The scope descriptor is what makes the fingerprint
                          # reproducible by the linker. Without it the verifier
                          # hashed a different set than the indexer did, and a

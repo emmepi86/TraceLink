@@ -186,6 +186,16 @@ def _index(symbols_path: str, repo: str):
     # Two separate claims, reported separately: whether the index still
     # describes this repository, and whether the evidence it was built from
     # is current. `effective` is the one a decision should read.
+    integrity = ((payload.get("indexing") or {}).get("path_integrity")
+                 if isinstance(payload, dict) else None) or {}
+    out["path_integrity"] = integrity.get("state", "unknown")
+    out["invalid_locations"] = integrity.get("invalid_locations", 0)
+    if out["invalid_locations"]:
+        # Distinct from `partial`, which says how much of the repository was
+        # covered. This says whether the coordinates point at it at all.
+        problems.append(f"index-paths-invalid: {out['invalid_locations']} "
+                        "location(s) do not name a file in the repository "
+                        "(they were dropped, not linked)")
     upstream = getattr(fresh, "upstream", None) or {}
     out["upstream_freshness"] = upstream.get("state", "unknown")
     out["upstream_reason"] = upstream.get("reason")
@@ -367,6 +377,8 @@ def render_text(report: dict) -> str:
 
     idx = report["index"]
     lines.append(f"index_freshness:    {idx['freshness']}")
+    if idx.get("invalid_locations"):
+        lines.append(f"invalid_locations:  {idx['invalid_locations']}")
     if idx.get("upstream_freshness"):
         lines.append(f"upstream_freshness: {idx['upstream_freshness']}")
         lines.append(f"effective_freshness: {idx.get('effective_freshness')}")
