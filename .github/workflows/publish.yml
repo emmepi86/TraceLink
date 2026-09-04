@@ -12,8 +12,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: versions in lockstep
@@ -24,6 +24,8 @@ jobs:
             || { echo "tag $GITHUB_REF_NAME does not match package version"; exit 1; }
       - name: unit tests
         run: python -m unittest discover tests -v
+      - name: the wheel we are about to publish must work when installed
+        run: sh scripts/smoke_wheel.sh python
 
   publish:
     needs: test
@@ -32,8 +34,8 @@ jobs:
     permissions:
       id-token: write  # trusted publishing
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: build sdist and wheel

@@ -32,6 +32,18 @@
 - **Fixed: a note whose bytes are not UTF-8 raised** `UnicodeDecodeError`
   out of the hook, inside the user's turn. Damaged input is degraded text
   now, never an exception.
+- **CI tests what gets published, not what sits in the checkout.**
+  `scripts/smoke_wheel.sh` builds the wheel, installs it into a clean venv
+  and runs the documented entry point — `--version`, `lint --help`, then
+  split → index → link → link --check → status — from *outside* the
+  repository, with `PYTHONPATH` cleared and a sentinel that aborts unless
+  `tracelink.__file__` resolves inside that venv. A wheel job runs it on
+  every supported Python, and the publish workflow runs it before uploading.
+- **The declared floor is the tested floor.** The matrix is 3.11 / 3.12 /
+  3.13: 3.11 is what `requires-python` promises, and the suite passing on an
+  older interpreter is accidental compatibility, not a contract. Actions
+  updated to the Node 24 generation (checkout@v7, setup-python@v7), and
+  `compileall` now covers `src/` as well.
 - **A test that the property stays true**: no shipped source assigns
   `sys.argv`, every `main()` leaves the process argv byte-for-byte intact,
   each module is callable in-process on its own, and an explicit empty

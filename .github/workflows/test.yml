@@ -7,17 +7,21 @@ on:
 
 jobs:
   test:
+    # 3.11 is the floor declared in pyproject.toml, and it is tested as such:
+    # the suite happening to pass on an older interpreter is accidental
+    # compatibility, not a promise, and never a reason to widen the contract.
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python: ["3.11", "3.12"]
+        python: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
       - name: compile
-        run: python -m compileall scripts tests
+        run: python -m compileall src scripts tests
       - name: versions in lockstep
         run: python3 scripts/bump.py --check
       - name: unit tests
@@ -28,3 +32,20 @@ jobs:
           python3 scripts/symbols.py --repo examples/demo-project --backend scan --out /tmp/s.json
           python3 scripts/link.py --vault /tmp/v --symbols /tmp/s.json
           python3 scripts/link.py --vault /tmp/v --symbols /tmp/s.json --check
+
+  wheel:
+    # What we would publish, exercised the way a user gets it: built as a
+    # wheel, installed into a clean venv, run from outside the checkout so a
+    # green result cannot come from the working tree.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: build, install and smoke-test the wheel
+        run: sh scripts/smoke_wheel.sh python
