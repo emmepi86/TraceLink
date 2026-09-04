@@ -187,6 +187,25 @@
   with the reason. On the repository that produced the finding, TraceLink
   now says `10458 of 10458 locations do not name a file inside <repo>` and
   exits 1, where it used to write 104 confident links.
+- **`consult` no longer has a term in the size of the codebase.** The
+  linker's cache of the symbol index was 94–98% of the link state, and
+  `consult` parsed all of it on every edit while reading none of it:
+  benchmark 02 measured 9.8 ms at 14k symbols and 548 ms at 400k, for a
+  vault that never changed. The state is now split by owner — `link` writes
+  its cache to `.tracelink-symbol-state.json` and the knowledge it compiled
+  to the link state; `consult` and `explain` read only the second, and do
+  not know the first exists. Rerun on the same harness: **1.35 ms at 14k,
+  1.18 ms at 400k**, a slope of −0.5 ms per million symbols where it was
+  +1381. A process that only consults peaks at 10 MB RSS where parsing the
+  symbol state alone costs 160 MB.
+- **Compiling the memory and serving it are separate.** Between `index` and
+  `link` the two sidecars legitimately disagree — that is mid-`sync`, not a
+  fault — and `consult` keeps serving the last complete snapshot instead of
+  going quiet because the index moved half a step ahead. The heavy file is
+  written first, so an interrupted run leaves the previous link state whole.
+  Disagreement is never repaired: `link` relinks. A v4 state is not mined
+  for its symbol map either — if the index is derivable, it is rebuilt from
+  the source rather than trusted from a cache nobody checked.
 - **A test that the property stays true**: no shipped source assigns
   `sys.argv`, every `main()` leaves the process argv byte-for-byte intact,
   each module is callable in-process on its own, and an explicit empty

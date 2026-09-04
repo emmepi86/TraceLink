@@ -41,9 +41,15 @@ STATE_FILE = ".tracelink-link-state.json"
 #: guess: the next `link` run rewrites it in full.
 #:
 #: v4 (0.9) records, next to each link, the reason it was made and the
-#: evidence behind it — so a link can explain itself without the resolver
-#: being run again — and gives each ambiguous name its candidate list.
-STATE_SCHEMA = 4
+#: evidence behind it, and gives each ambiguous name its candidate list.
+#:
+#: v5 (0.9) moved the linker's own cache of the symbol index OUT of this
+#: file. It was 94–98% of it, this module never read a byte of it, and the
+#: per-edit cost was almost entirely parsing it: 9.8ms at 14k symbols,
+#: 548ms at 400k, for a vault that never changed. What is left here is the
+#: knowledge `link` compiled — which is all `consult` and `explain` need,
+#: and all they are allowed to know about.
+STATE_SCHEMA = 5
 
 #: How many notes a consult shows before deferring to CODE-INDEX.md.
 MAX_NOTES = 5

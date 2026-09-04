@@ -35,6 +35,14 @@ import plugin_refresh  # noqa: E402
 STATE_FILE = ".tracelink-link-state.json"
 
 
+def consult_schema():
+    """Follow the package rather than a literal: a schema bump means
+    something in the linker's tests, not in this fixture."""
+    sys.path.insert(0, os.path.join(ROOT, "src"))
+    from tracelink.consult import STATE_SCHEMA
+    return STATE_SCHEMA
+
+
 def note_md(note_id, status, severity, title):
     """A note exactly as split+link leave it: frontmatter, linked-code block,
     then the `# id — title [SEV]` heading."""
@@ -65,10 +73,10 @@ def make_project(tmp, notes, config={"consult": True}):
     os.makedirs(os.path.join(proj, "src"))
     with open(os.path.join(proj, "src", "app.py"), "w") as fh:
         fh.write("def compute_total(items):\n    return sum(items)\n")
-    state = {"schema_version": 4,
+    state = {"schema_version": consult_schema(),
              "symbols_fingerprint": "sha256:0",
              "options_fingerprint": "sha256:0",
-             "symbol_locations": {},
+             "symbol_state_fingerprint": "sha256:0",
              "notes": {}}
     for note_id, status, severity, title, symbols in notes:
         fname = note_id + ".md"

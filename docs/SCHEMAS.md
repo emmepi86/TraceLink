@@ -75,10 +75,30 @@ A key this version does not understand is kept and ignored, and `doctor`
 points it out. A config written by a newer TraceLink must not break an older
 one.
 
-## 3. Link state — a cache, and treated as one
+## 3. Link state and symbol state — caches, and treated as such
 
-`{vault}/.tracelink-link-state.json`, schema **4**. Written by `link`, read
-by `consult`, `explain` and `status`. Delete it and nothing is lost but time.
+Two files, split by owner rather than by size:
+
+| file | written by | read by | holds |
+|---|---|---|---|
+| `.tracelink-link-state.json` (schema **5**) | `link` | `consult`, `explain`, `status` | the knowledge `link` compiled |
+| `.tracelink-symbol-state.json` (schema **1**) | `link` | `link` | its own cache of the index it consumed |
+
+Delete either and nothing is lost but time.
+
+The split is the point. The symbol cache was 94–98% of one file that
+`consult` parsed on every edit and never read a byte of, which made the
+per-edit cost a function of the *codebase* rather than of the memory being
+served: 9.8 ms at 14k symbols, 548 ms at 400k, for a vault that never
+changed. `consult` now reads only the compiled knowledge, and does not know
+the other file exists.
+
+The link state records `symbol_state_fingerprint`, which says which symbol
+state these links were produced from. `link` checks it; `consult` neither
+reads it nor opens the file it names. Between `index` and `link` the two
+files legitimately disagree — that is the normal condition mid-`sync`, not a
+fault — and `consult` keeps serving the last complete snapshot rather than
+going quiet because the index moved half a step ahead.
 
 ```json
 {

@@ -576,6 +576,15 @@ def write_atomic(path: str, content: str) -> None:
 #: Imported, not redefined: `consult` reads this same sidecar on the hot
 #: path and a second spelling of the name or the schema would drift.
 STATE_FILE = _consult.STATE_FILE
+
+#: The linker's own cache of the index it consumed: one fingerprint per
+#: symbol name, so an unchanged index can be recognised without re-reading
+#: it. It lives beside the link state rather than inside it because it is
+#: large, it grows with the codebase rather than with the vault, and the
+#: per-edit path must never pay to parse it. `consult` does not know this
+#: file exists, and a test keeps it that way.
+SYMBOL_STATE_FILE = ".tracelink-symbol-state.json"
+SYMBOL_STATE_SCHEMA = 1
 _STATE_FILE = STATE_FILE  # private alias kept for internal compatibility
 #: v2 caches each link's resolved location alongside its name, so the skip
 #: path renders the managed block from the state instead of disambiguating
@@ -640,6 +649,33 @@ def files_fingerprint(outcomes: list) -> str:
     return _sha(json.dumps(outcomes))
 
 
+def load_symbol_state(path: str) -> Optional[dict]:
+    """The linker's cache of the index, or None if it cannot be trusted.
+
+    Same discipline as the link state: absent, unreadable, wrong schema or
+    wrong shape all collapse to None, which means "relink everything". A
+    half-trusted cache of what the index used to look like is exactly how a
+    note keeps a link to a symbol that has moved.
+    """
+    try:
+        with open(path) as fh:
+            raw = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    if raw.get("schema_version") != SYMBOL_STATE_SCHEMA:
+        return None
+    if not isinstance(raw.get("symbol_state_fingerprint"), str):
+        return None
+    locations = raw.get("symbol_locations")
+    if not isinstance(locations, dict) or not all(
+            isinstance(k, str) and isinstance(v, str)
+            for k, v in locations.items()):
+        return None
+    return raw
+
+
 def load_state(path: str) -> Optional[dict]:
     """The state on disk, or None for anything less than fully well-formed.
 
@@ -658,9 +694,10 @@ def load_state(path: str) -> Optional[dict]:
         return None
     if not isinstance(raw.get("options_fingerprint"), str):
         return None
-    locs = raw.get("symbol_locations")
-    if not isinstance(locs, dict) or not all(
-            isinstance(k, str) and isinstance(v, str) for k, v in locs.items()):
+    # v5: the symbol map moved out. What stays is the pointer to the symbol
+    # state these links were produced from, so the linker can tell whether
+    # the two files still belong together. `consult` never reads it.
+    if not isinstance(raw.get("symbol_state_fingerprint"), str):
         return None
     notes = raw.get("notes")
     if not isinstance(notes, dict):
@@ -1023,16 +1060,32 @@ def main(argv=None, prog=None) -> int:
     opts_fp = options_fingerprint(args.min_len, args.max_links, stop)
     current_locations = {n: location_fingerprint(l) for n, l in symbols.items()}
     state_path = os.path.join(args.vault, _STATE_FILE)
+    symbol_state_path = os.path.join(args.vault, SYMBOL_STATE_FILE)
     state = None
+    symbol_state = None
     if not args.check and not args.full:
         state = load_state(state_path)
         if state and state["options_fingerprint"] != opts_fp:
             state = None
+        if state:
+            # The two sidecars are written separately, so they can disagree:
+            # an interrupted run, a hand-deleted file, a symbol state from
+            # another index. Disagreement is not repaired — it relinks.
+            symbol_state = load_symbol_state(symbol_state_path)
+            if (symbol_state is None
+                    or symbol_state["symbol_state_fingerprint"]
+                    != state["symbol_state_fingerprint"]):
+                symbol_state = None
     symbols_changed = bool(state) and state["symbols_fingerprint"] != symbols_fp
+    if state and symbols_changed and symbol_state is None:
+        # No trustworthy record of what the index looked like last time, so
+        # no way to prove which notes are unaffected. Relink everything.
+        state = None
+        symbols_changed = False
     changed_names: set = set()
     mention_pat = None
     if state and symbols_changed:
-        old_locations = state["symbol_locations"]
+        old_locations = symbol_state["symbol_locations"]
         # Added, removed, and moved names all count as changed: a removed name
         # can turn an ambiguity or an unlinked reason into something else, so
         # notes that merely MENTION it are relinked too — more conservative
@@ -1351,11 +1404,25 @@ def main(argv=None, prog=None) -> int:
     # relinked nothing, because the fingerprints must describe the inputs the
     # vault was last verified against, not the last time something changed.
     if not args.check:
+        # Order matters. The heavy cache goes first, so an interruption
+        # between the two leaves the previous link state intact and
+        # readable: `consult` keeps serving the last complete snapshot, and
+        # the next `link` sees two files that disagree and relinks. The
+        # reverse order would leave a link state pointing at a cache that
+        # was never written.
+        write_atomic(os.path.join(args.vault, SYMBOL_STATE_FILE),
+                     json.dumps({
+                         "schema_version": SYMBOL_STATE_SCHEMA,
+                         "symbol_state_fingerprint": symbols_fp,
+                         "symbol_locations": current_locations,
+                     }, indent=1) + "\n")
         write_atomic(state_path, json.dumps({
             "schema_version": _STATE_SCHEMA,
             "symbols_fingerprint": symbols_fp,
             "options_fingerprint": opts_fp,
-            "symbol_locations": current_locations,
+            # Which symbol state produced these links. The linker checks it;
+            # consult neither reads it nor opens the file it names.
+            "symbol_state_fingerprint": symbols_fp,
             "notes": new_state_notes,
         }, indent=1) + "\n")
 

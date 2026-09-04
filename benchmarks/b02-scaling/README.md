@@ -43,6 +43,38 @@ what to skip.
 would cost roughly **1.4 s per edit** — on a path whose whole design was to
 be free. Peak RSS follows the same line: 700 MB at 400 000 symbols.
 
+### After the fix: the dependency is gone, not reduced
+
+The state was split by owner — the linker's cache of the index moved to its
+own file, and `consult` reads only what `link` compiled. Same harness, same
+generated repositories, same command:
+
+| Symbols | link state before → after | `consult` p50 before → after |
+|---:|---:|---:|
+| 14 000 | 1.38 MB → **0.054 MB** | 9.8 ms → **1.35 ms** |
+| 50 000 | 4.80 MB → **0.054 MB** | 43.1 ms → **1.32 ms** |
+| 100 000 | 9.55 MB → **0.054 MB** | 88.8 ms → **1.16 ms** |
+| 250 000 | 23.80 MB → **0.054 MB** | 306.6 ms → **1.06 ms** |
+| 400 000 | 38.05 MB → **0.054 MB** | 547.7 ms → **1.18 ms** |
+
+The vault is the same 100 notes at every row, and now so is the state: the
+file `consult` reads no longer contains anything that grows with the
+codebase.
+
+```
+slope before:  +1381 ms per million symbols
+slope after:   −0.5 ms per million symbols   (i.e. none, within noise)
+```
+
+Measured in a process that does nothing but consult, at 400 000 symbols:
+**p50 1.06 ms, peak RSS 10.0 MB**. Parsing the symbol state alone — the
+structure that used to be in the same file — costs 160 MB. It is still
+38 MB on disk, and that is fine: it is the linker's business, and the
+per-edit path never opens it.
+
+The result worth stating is not "26× faster". It is that
+`consult` no longer has a term in the number of symbols at all.
+
 ## F2 — `link`'s floor is the tree walk, and it grows with the repository
 
 Files and notes are separated here: these repositories carry one symbol per

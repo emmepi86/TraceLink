@@ -157,8 +157,9 @@ class DoctorDiagnoses(unittest.TestCase):
         self.assertNotIn("fail", [c["state"] for c in doc["checks"]])
 
     def test_it_reports_the_link_state_schema_it_found(self):
+        from tracelink.consult import STATE_SCHEMA
         _c, _doc, states = self.states()
-        self.assertIn("link state schema 4", states)
+        self.assertIn(f"link state schema {STATE_SCHEMA}", states)
 
     def test_a_backend_without_its_input_is_a_failure_with_a_remedy(self):
         with open(config.path(self.proj), "w") as fh:
