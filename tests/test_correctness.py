@@ -241,31 +241,31 @@ class AmbiguousSymbolsAreNeverGuessed(unittest.TestCase):
     ]}
 
     def test_a_bare_name_is_not_linked(self):
-        loc, how = link.disambiguate("validate", self.TWO["validate"],
+        loc, how, _basis = link.disambiguate("validate", self.TWO["validate"],
                                      "the `validate` helper is wrong.", {})
         self.assertIsNone(loc)
         self.assertEqual(how, "ambiguous")
 
     def test_a_qualified_name_resolves_it(self):
-        loc, how = link.disambiguate("validate", self.TWO["validate"],
+        loc, how, _basis = link.disambiguate("validate", self.TWO["validate"],
                                      "the bug is in `payments.validate`.", {})
         self.assertEqual(loc["path"], "src/payments.py")
         self.assertEqual(how, "qualified-name")
 
     def test_a_path_in_the_note_resolves_it(self):
-        loc, how = link.disambiguate("validate", self.TWO["validate"],
+        loc, how, _basis = link.disambiguate("validate", self.TWO["validate"],
                                      "see src/users.py for the failing branch.", {})
         self.assertEqual(loc["path"], "src/users.py")
         self.assertEqual(how, "path-in-note")
 
     def test_a_frontmatter_override_wins(self):
-        loc, how = link.disambiguate("validate", self.TWO["validate"], "prose.",
+        loc, how, _basis = link.disambiguate("validate", self.TWO["validate"], "prose.",
                                      {"validate": "src/payments.py"})
         self.assertEqual(loc["path"], "src/payments.py")
         self.assertEqual(how, "frontmatter-override")
 
     def test_a_single_definition_still_links(self):
-        loc, how = link.disambiguate(
+        loc, how, _basis = link.disambiguate(
             "parse_payload",
             [{"path": "src/parser.py", "line": 4, "kind": "py",
               "qualified_name": "parser.parse_payload"}], "prose.", {})
@@ -301,14 +301,14 @@ class DottedReferencesNarrowWithoutGuessing(unittest.TestCase):
             {"path": "src/payments.py", "line": 74, "kind": "py",
              "qualified_name": "payments.validate"},
         ]
-        loc, how = link.disambiguate(
+        loc, how, _basis = link.disambiguate(
             "validate", two, "the bug is in `payments.validate`.", {})
         self.assertEqual((loc["path"], how), ("src/payments.py", "qualified-name"))
 
     def test_a_dotted_suffix_of_a_deeper_qualified_name_resolves(self):
         """`payments.validate` is not the full qualified name
         `app.payments.validate`, but it names exactly one of them."""
-        loc, how = link.disambiguate(
+        loc, how, _basis = link.disambiguate(
             "validate", self.QUALIFIED, "see `payments.validate` for the bug.", {})
         self.assertEqual((loc["path"], how), ("src/payments.py", "dotted-name"))
 
@@ -323,7 +323,7 @@ class DottedReferencesNarrowWithoutGuessing(unittest.TestCase):
                     {"path": payments_path, "line": 74, "kind": "py",
                      "qualified_name": None},
                 ]
-                loc, how = link.disambiguate(
+                loc, how, _basis = link.disambiguate(
                     "validate", locs, "`payments.validate` is wrong.", {})
                 self.assertEqual((loc["path"], how), (payments_path, "dotted-path"))
 
@@ -332,7 +332,7 @@ class DottedReferencesNarrowWithoutGuessing(unittest.TestCase):
             {"path": "a/payments.py", "line": 1, "kind": "py", "qualified_name": None},
             {"path": "b/payments.py", "line": 2, "kind": "py", "qualified_name": None},
         ]
-        loc, how = link.disambiguate(
+        loc, how, _basis = link.disambiguate(
             "validate", locs, "`payments.validate` is wrong.", {})
         self.assertIsNone(loc)
         self.assertEqual(how, "dotted-ambiguous")
@@ -341,7 +341,7 @@ class DottedReferencesNarrowWithoutGuessing(unittest.TestCase):
         """The note says `payments.validate`; the only known `validate` lives
         in users.py. Contradictory evidence is not no evidence — linking the
         tail as if the prefix had not been written would be guessing."""
-        loc, how = link.disambiguate(
+        loc, how, _basis = link.disambiguate(
             "validate", self.SCAN[:1], "`payments.validate` is wrong.", {})
         self.assertIsNone(loc)
         self.assertEqual(how, "dotted-unmatched")
@@ -349,7 +349,7 @@ class DottedReferencesNarrowWithoutGuessing(unittest.TestCase):
     def test_path_suffix_matching_is_case_sensitive(self):
         locs = [{"path": "src/Payments.py", "line": 74, "kind": "py",
                  "qualified_name": None}]
-        loc, how = link.disambiguate(
+        loc, how, _basis = link.disambiguate(
             "validate", locs, "`payments.validate` is wrong.", {})
         self.assertIsNone(loc)
         self.assertEqual(how, "dotted-unmatched")
@@ -366,10 +366,10 @@ class DottedReferencesNarrowWithoutGuessing(unittest.TestCase):
             {"path": "src/payments.py", "line": 74, "kind": "py",
              "qualified_name": "payments.validate"},
         ]
-        loc, how = link.disambiguate(
+        loc, how, _basis = link.disambiguate(
             "validate", two, "see `app.payments.validate` for the bug.", {})
         self.assertEqual((loc["path"], how), ("src/payments.py", "qualified-name"))
-        loc, how = link.disambiguate(
+        loc, how, _basis = link.disambiguate(
             "validate", two[1:], "see `app.payments.validate` for the bug.", {})
         self.assertEqual((loc["path"], how), ("src/payments.py", "unique"))
 
@@ -382,7 +382,7 @@ class DottedReferencesNarrowWithoutGuessing(unittest.TestCase):
             {"path": "b/payments.py", "line": 2, "kind": "py", "qualified_name": None},
             {"path": "src/other.py", "line": 3, "kind": "py", "qualified_name": None},
         ]
-        loc, how = link.disambiguate(
+        loc, how, _basis = link.disambiguate(
             "validate", locs, "`payments.validate` lives in src/other.py.", {})
         self.assertIsNone(loc)
         self.assertEqual(how, "dotted-and-path-disagree")
@@ -394,16 +394,16 @@ class DottedReferencesNarrowWithoutGuessing(unittest.TestCase):
         for prefix in ("self", "cls", "this"):
             with self.subTest(prefix=prefix):
                 text = f"call `{prefix}.validate` here."
-                loc, how = link.disambiguate("validate", self.SCAN[1:], text, {})
+                loc, how, _basis = link.disambiguate("validate", self.SCAN[1:], text, {})
                 self.assertEqual((loc["path"], how), ("src/payments.py", "unique"))
-                loc, how = link.disambiguate("validate", self.SCAN, text, {})
+                loc, how, _basis = link.disambiguate("validate", self.SCAN, text, {})
                 self.assertEqual((loc, how), (None, "ambiguous"))
 
     def test_an_attribute_chain_still_names_its_prefix(self):
         """`payments.validate.errors` contains the reference
         `payments.validate` — an attribute of the thing is still a naming of
         the thing, and the prefix narrows as usual."""
-        loc, how = link.disambiguate(
+        loc, how, _basis = link.disambiguate(
             "validate", self.SCAN, "`payments.validate.errors` is stale.", {})
         self.assertEqual((loc["path"], how), ("src/payments.py", "dotted-path"))
 
@@ -414,12 +414,12 @@ class DottedReferencesNarrowWithoutGuessing(unittest.TestCase):
         syms = {"validate": self.SCAN}
         found = link.candidates("payments.validate is wrong.", syms, 7, set())
         self.assertEqual(found, [("validate", "identifier")])
-        loc, how = link.disambiguate(
+        loc, how, _basis = link.disambiguate(
             "validate", self.SCAN, "payments.validate is wrong.", {})
         self.assertEqual((loc["path"], how), ("src/payments.py", "dotted-path"))
 
     def test_a_dotted_prefix_and_a_cited_path_that_disagree_stay_ambiguous(self):
-        loc, how = link.disambiguate(
+        loc, how, _basis = link.disambiguate(
             "validate", self.SCAN,
             "`payments.validate` is described in src/users.py.", {})
         self.assertIsNone(loc)
@@ -444,7 +444,7 @@ class DottedReferencesNarrowWithoutGuessing(unittest.TestCase):
         self.assertEqual(found, [("validate", "inline-code")])
 
     def test_a_bare_name_without_a_dotted_prefix_behaves_as_before(self):
-        loc, how = link.disambiguate(
+        loc, how, _basis = link.disambiguate(
             "validate", self.SCAN, "the `validate` helper is wrong.", {})
         self.assertIsNone(loc)
         self.assertEqual(how, "ambiguous")
@@ -740,31 +740,31 @@ class ContradictoryEvidenceStaysAmbiguous(unittest.TestCase):
     ]
 
     def test_two_qualified_names(self):
-        _loc, how = link.disambiguate(
+        _loc, how, _basis = link.disambiguate(
             "validate", self.TWO, "`users.validate` differs from `payments.validate`.", {})
         self.assertEqual(how, "multiple-qualified-names")
 
     def test_two_paths(self):
-        _loc, how = link.disambiguate(
+        _loc, how, _basis = link.disambiguate(
             "validate", self.TWO, "compares src/users.py and src/payments.py.", {})
         self.assertEqual(how, "multiple-paths-in-note")
 
     def test_qualified_name_and_path_disagree(self):
         """Both are authorial evidence of the same weight. Inventing a
         precedence between them would be the tool deciding, not the author."""
-        _loc, how = link.disambiguate(
+        _loc, how, _basis = link.disambiguate(
             "validate", self.TWO,
             "`users.validate` has the bug described in src/payments.py.", {})
         self.assertEqual(how, "qualified-name-and-path-disagree")
 
     def test_they_agree(self):
-        loc, how = link.disambiguate(
+        loc, how, _basis = link.disambiguate(
             "validate", self.TWO,
             "`payments.validate` in src/payments.py is the one.", {})
         self.assertEqual(loc["path"], "src/payments.py")
 
     def test_a_single_qualified_name_still_resolves(self):
-        loc, how = link.disambiguate("validate", self.TWO, "see `payments.validate`.", {})
+        loc, how, _basis = link.disambiguate("validate", self.TWO, "see `payments.validate`.", {})
         self.assertEqual((loc["path"], how), ("src/payments.py", "qualified-name"))
 
 

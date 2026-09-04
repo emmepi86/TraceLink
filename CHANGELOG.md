@@ -77,6 +77,27 @@
   authoritative, and the note on disk is untouched. Only the four words
   `SEVERITY:` accepts are stripped: a title that genuinely ends in brackets
   keeps them.
+- **Every link explains itself: `tracelink explain <ID>`.** The resolver
+  always knew why it linked something; the reason died with the run. It is
+  now recorded next to the link (state schema 4, with each ambiguous name
+  keeping its candidate list) and read back — never recomputed, which would
+  answer about today's repository rather than about the link that exists.
+  `explain` answers four questions and no fifth: what we know, where it
+  applies, why it was linked there, and what stayed uncertain. When nothing
+  resolved it says *no link was asserted*. No scores, no confidences.
+- **A published vocabulary, separate from the resolver's.** States are
+  `match` / `ambiguous` / `conflict`; methods are `explicit_override`,
+  `sole_candidate`, `qualified_symbol`, `path_in_note`; the basis carries
+  the evidence itself — the qualified name found in the note, the path it
+  cited, the dotted reference that matched, the frontmatter pin. Internal
+  reason codes never appear in a document unless `--debug` asks, and carry
+  no stability promise. Two tests hold the boundary: **completeness** (every
+  reason `disambiguate` can return is mapped, read out of its syntax tree)
+  and **closure** (every published state, method and basis kind is produced
+  by a real pipeline run over a real fixture — a published word no run
+  produces would be a lie waiting to happen).
+- `consult --json` anchors carry the same provenance. Additive: still
+  `schema_version: 1`. The version tracks incompatibility, not releases.
 - **A test that the property stays true**: no shipped source assigns
   `sys.argv`, every `main()` leaves the process argv byte-for-byte intact,
   each module is callable in-process on its own, and an explicit empty

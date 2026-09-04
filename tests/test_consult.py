@@ -65,7 +65,7 @@ def make_project(tmp, notes, config={"consult": True}):
     os.makedirs(os.path.join(proj, "src"))
     with open(os.path.join(proj, "src", "app.py"), "w") as fh:
         fh.write("def compute_total(items):\n    return sum(items)\n")
-    state = {"schema_version": 3,
+    state = {"schema_version": 4,
              "symbols_fingerprint": "sha256:0",
              "options_fingerprint": "sha256:0",
              "symbol_locations": {},
@@ -80,6 +80,9 @@ def make_project(tmp, notes, config={"consult": True}):
             "locations": [{"path": s[1], "line": s[2]} for s in symbols],
             "files": [],
             "files_fingerprint": "sha256:0",
+            "provenance": [{"reason": "unique",
+                            "basis": [["sole_candidate", s[0]]]}
+                           for s in symbols],
         }
     with open(os.path.join(vault, STATE_FILE), "w") as fh:
         json.dump(state, fh)

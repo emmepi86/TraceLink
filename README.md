@@ -200,6 +200,55 @@ stderr), and the exit code says what happened: `0` answered — including
 `0`, not `3`: the link state knows which symbols have findings, not which
 symbols exist, and this command does not assert what it cannot check.
 
+And ask why a link exists at all:
+
+```bash
+tracelink explain RES-17
+tracelink explain RES-17 --json
+```
+
+```text
+RES-17
+
+totals ignore tax
+[open/high]
+
+MATCH
+  payments.validate
+  src/payments.py:88
+
+  Method: qualified_symbol
+  Basis:
+    the finding names the qualified symbol `payments.validate`
+```
+
+Every link carries a **state**, a **method** and the **basis** that produced
+it, recorded when the link was made and read back — never recomputed, which
+would answer about today's repository rather than about the link that
+exists. When nothing was resolved, `explain` says so in those words:
+
+```text
+AMBIGUOUS
+  the finding names `validate`
+
+  Candidates:
+    src/payments.py:L1
+    src/refunds.py:L1
+
+  No link was asserted.
+```
+
+There are no confidence scores anywhere in this output. A link is asserted
+or it is not.
+
+The published vocabulary is small and separate from the resolver's own: the
+states are `match`, `ambiguous` and `conflict`, and the methods are
+`explicit_override`, `sole_candidate`, `qualified_symbol` and
+`path_in_note`. The resolver's internal reason codes stay internal —
+`--debug` shows them, with no promise that they will not change. Tests keep
+the mapping total in both directions: every internal reason has a published
+name, and every published name is produced by a real run.
+
 Two more commands close the loop:
 
 ```bash

@@ -317,7 +317,9 @@ class TheStateCarriesFileAnchors(_AnchorCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(_stat(r, "notes_skipped_unchanged"), 0)
         healed = json.loads(self.read(STATE))
-        self.assertEqual(healed["schema_version"], 3)
+        sys.path.insert(0, os.path.join(ROOT, "src"))
+        from tracelink.consult import STATE_SCHEMA
+        self.assertEqual(healed["schema_version"], STATE_SCHEMA)
         self.assertIn("files", healed["notes"]["RES-01.md"])
 
 
@@ -343,7 +345,11 @@ class AmbiguityNoLongerImpliesAbsence(_AnchorCase):
         self.assertIn("AMBIGUOUS validate", r.stdout)
         entry = json.loads(self.read(STATE))["notes"]["RES-01.md"]
         self.assertEqual(entry["files"], ["infra/docker/compose.yml"])
-        self.assertEqual(entry["ambiguous"], [["validate", "ambiguous"]])
+        self.assertEqual(entry["ambiguous"][0][:2], ["validate", "ambiguous"])
+        # v4: an ambiguous name carries the candidates it could not choose
+        # between, so `explain` can show them without the resolver running.
+        self.assertEqual(sorted(entry["ambiguous"][0][2]),
+                         sorted(["src/users.py:L3", "src/payments.py:L7"]))
         self.assertIn("- infra/docker/compose.yml", self.block("RES-01.md"))
 
     def test_consult_sees_the_files_of_a_note_with_incidental_ambiguity(self):
@@ -575,9 +581,15 @@ import plugin_refresh  # noqa: E402
 
 
 def _consult_project(tmp, entry_files, linked=(), status="open",
-                     severity="medium", schema=3):
-    """A project with one hand-built note + v3 link-state, the same shape
-    the linker now writes: `files` next to linked/locations."""
+                     severity="medium", schema=None):
+    """A project with one hand-built note + link-state, the same shape the
+    linker writes: `files` next to linked/locations, provenance beside the
+    links. The schema follows the package rather than a literal, so a bump
+    breaks the linker's tests (where it means something) and not this."""
+    if schema is None:
+        sys.path.insert(0, os.path.join(ROOT, "src"))
+        from tracelink.consult import STATE_SCHEMA
+        schema = STATE_SCHEMA
     proj = os.path.join(tmp, "proj")
     vault = os.path.join(proj, ".tracelink", "vault")
     os.makedirs(vault)
@@ -598,7 +610,11 @@ def _consult_project(tmp, entry_files, linked=(), status="open",
                  "linked": [s[0] for s in linked],
                  "locations": [{"path": s[1], "line": s[2]} for s in linked],
                  "files": list(entry_files),
-                 "files_fingerprint": "sha256:0"}}}
+                 "files_fingerprint": "sha256:0",
+                 "provenance": [{"reason": "unique",
+                                 "basis": [["sole_candidate", s[0]]]}
+                                for s in linked],
+                 "ambiguous": []}}}
     with open(os.path.join(vault, STATE), "w") as fh:
         json.dump(state, fh)
     with open(os.path.join(proj, ".tracelink", "config.json"), "w") as fh:

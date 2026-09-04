@@ -168,9 +168,16 @@ class TheJsonDocumentIsAContract(unittest.TestCase):
         self.assertEqual("open", hit["status"])
         self.assertEqual("high", hit["severity"])
         self.assertEqual("totals ignore tax", hit["title"])
-        self.assertEqual([{"kind": "symbol", "name": "payments.validate",
-                           "path": "src/payments.py", "line": 88}],
-                         hit["anchors"])
+        anchor = hit["anchors"][0]
+        # schema 1 fields, unchanged
+        self.assertEqual("symbol", anchor["kind"])
+        self.assertEqual("payments.validate", anchor["name"])
+        self.assertEqual("src/payments.py", anchor["path"])
+        self.assertEqual(88, anchor["line"])
+        # ms-5 added provenance to the same object: additive, still schema 1
+        self.assertEqual("match", anchor["state"])
+        self.assertIn(anchor["method"], (None,) + tuple(
+            consult_mod.PUBLIC_METHODS))
 
     def test_a_file_target_reports_both_kinds_of_anchor(self):
         _, doc = self.doc("src/payments.py")

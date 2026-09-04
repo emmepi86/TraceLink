@@ -74,7 +74,8 @@ def note_md(note_id, status, severity, title):
             f"{heading}\n\nBody that consult must never need to read.\n")
 
 
-def make_project(tmp, notes=FIXTURE, schema=3, state="normal",
+def make_project(tmp, notes=FIXTURE, schema=consult_mod.STATE_SCHEMA,
+                 state="normal",
                  config={"consult": True}):
     """A project with a hand-built vault + link-state, as the linker writes
     it. `state`: "normal", "absent", "corrupt" or "not-an-object"."""
@@ -95,7 +96,11 @@ def make_project(tmp, notes=FIXTURE, schema=3, state="normal",
             "content_hash": "sha256:0",
             "linked": [s[0] for s in symbols],
             "locations": [{"path": s[1], "line": s[2]} for s in symbols],
-            "files": list(files), "files_fingerprint": "sha256:0"}
+            "files": list(files), "files_fingerprint": "sha256:0",
+            "provenance": [{"reason": "unique",
+                            "basis": [["sole_candidate", s[0]]]}
+                           for s in symbols],
+            "ambiguous": []}
     path = os.path.join(vault, consult_mod.STATE_FILE)
     if state == "normal":
         with open(path, "w") as fh:

@@ -37,9 +37,13 @@ import sys
 #: The linker's sidecar, written next to the vault. Shared with `linker`.
 STATE_FILE = ".tracelink-link-state.json"
 
-#: Schema of that sidecar (0.8.0). An older or newer state is silence, never
-#: a guess: the next refresh rewrites it.
-STATE_SCHEMA = 3
+#: Schema of that sidecar. An older or newer state is silence, never a
+#: guess: the next `link` run rewrites it in full.
+#:
+#: v4 (0.9) records, next to each link, the reason it was made and the
+#: evidence behind it — so a link can explain itself without the resolver
+#: being run again — and gives each ambiguous name its candidate list.
+STATE_SCHEMA = 4
 
 #: How many notes a consult shows before deferring to CODE-INDEX.md.
 MAX_NOTES = 5
@@ -63,21 +67,91 @@ EXIT_NOT_FOUND = 3   # a file target that does not exist in the repository
 EXIT_AMBIGUOUS = 4   # the name means two or more things; never guessed
 EXIT_NO_STATE = 5    # no link-state, or one this version cannot read
 
+#: Internal resolver reason -> (published state, published method).
+#:
+#: Two vocabularies on purpose. The resolver's reasons name *how its own
+#: branches ran* and are free to change when it is refactored; `state` and
+#: `method` name *what kind of conclusion was published*, and are not. A
+#: caller may branch on `qualified_symbol`; nobody may branch on
+#: `dotted-name`. Tests keep the mapping total in both directions: every
+#: reason the resolver can return is mapped, and every method declared here
+#: is reached by a real run.
+#:
+#: `method` is None wherever no link was asserted — an ambiguity has no
+#: method, because no conclusion was reached.
+RESOLUTION = {
+    # a location was chosen
+    "frontmatter-override": ("match", "explicit_override"),
+    "unique": ("match", "sole_candidate"),
+    "qualified-name": ("match", "qualified_symbol"),
+    "dotted-name": ("match", "qualified_symbol"),
+    "path-in-note": ("match", "path_in_note"),
+    "dotted-path": ("match", "path_in_note"),
+    # the evidence pointed at more than one place
+    "ambiguous": ("ambiguous", None),
+    "dotted-ambiguous": ("ambiguous", None),
+    "multiple-qualified-names": ("ambiguous", None),
+    "multiple-paths-in-note": ("ambiguous", None),
+    # the note's own evidence disagrees with itself, or matches nothing
+    "qualified-name-and-path-disagree": ("conflict", None),
+    "dotted-and-path-disagree": ("conflict", None),
+    "dotted-unmatched": ("conflict", None),
+    "override-unmatched": ("conflict", None),
+}
+
+#: The three published states. `match` asserted a location; `ambiguous` and
+#: `conflict` assert nothing, and say why.
+PUBLIC_STATES = ("match", "ambiguous", "conflict")
+
+#: The published methods — what kind of evidence decided.
+PUBLIC_METHODS = ("explicit_override", "sole_candidate", "qualified_symbol",
+                  "path_in_note")
+
+#: The published kinds of evidence a basis entry can carry.
+BASIS_KINDS = ("frontmatter_override", "sole_candidate",
+               "qualified_name_in_note", "path_in_note", "dotted_reference",
+               "path_suffix_match")
+
 #: Version of the `--json` document. Independent of the sidecar's internal
 #: `schema_version`: the protocol we publish and the algorithm that produces
 #: it evolve on different clocks, and only one of them is a promise.
 JSON_SCHEMA_VERSION = 1
 
 
+class Provenance:
+    """Why a link exists: the conclusion, and the evidence behind it.
+
+    `state` and `method` are published vocabulary; `reason` is the
+    resolver's own word for the branch it took, kept for `--debug` and
+    carrying no promise of stability.
+    """
+
+    __slots__ = ("state", "method", "basis", "reason")
+
+    def __init__(self, reason, basis=()):
+        self.reason = reason
+        self.state, self.method = RESOLUTION.get(reason, ("match", None))
+        self.basis = tuple((str(kind), value)
+                           for kind, value in basis)
+
+    def __eq__(self, other):
+        return (isinstance(other, Provenance) and self.reason == other.reason
+                and self.basis == other.basis)
+
+    def __repr__(self):
+        return f"Provenance({self.state!r}, {self.method!r}, {self.basis!r})"
+
+
 class SymbolHit:
-    """One symbol a note links, where it was found."""
+    """One symbol a note links, where it was found and why."""
 
-    __slots__ = ("name", "line", "path")
+    __slots__ = ("name", "line", "path", "provenance")
 
-    def __init__(self, name, line=None, path=None):
+    def __init__(self, name, line=None, path=None, provenance=None):
         self.name = name
         self.line = line if isinstance(line, int) else None
         self.path = path
+        self.provenance = provenance
 
     def __eq__(self, other):
         return (isinstance(other, SymbolHit) and self.name == other.name
@@ -337,11 +411,14 @@ def _note_hits(notes, vault, keep):
         linked, locations = entry.get("linked"), entry.get("locations")
         if not isinstance(linked, list) or not isinstance(locations, list):
             continue
+        records = entry.get("provenance")
+        if not isinstance(records, list) or len(records) != len(linked):
+            records = [None] * len(linked)
         symbols = []
-        for name, loc in zip(linked, locations):
+        for name, loc, record in zip(linked, locations, records):
             if not isinstance(name, str) or not isinstance(loc, dict):
                 continue
-            hit = keep(name, loc)
+            hit = keep(name, loc, _provenance(record))
             if hit is not None:
                 symbols.append(hit)
         file_anchor = keep.file_anchor(entry)
@@ -354,10 +431,28 @@ def _note_hits(notes, vault, keep):
     return hits
 
 
+def _provenance(record):
+    """A `Provenance` from a state record, or None when the state has none.
+
+    A state written before provenance existed is not an error and not a
+    guess: the link is simply unexplained until the next `link` run.
+    """
+    if not isinstance(record, dict):
+        return None
+    reason = record.get("reason")
+    if not isinstance(reason, str):
+        return None
+    basis = record.get("basis")
+    pairs = [(b[0], b[1]) for b in basis
+             if isinstance(b, (list, tuple)) and len(b) == 2
+             and isinstance(b[0], str)] if isinstance(basis, list) else []
+    return Provenance(reason, pairs)
+
+
 def _keep_in_file(rel):
-    def keep(name, loc):
+    def keep(name, loc, provenance):
         if loc.get("path") == rel:
-            return SymbolHit(name, loc.get("line"), rel)
+            return SymbolHit(name, loc.get("line"), rel, provenance)
         return None
 
     def file_anchor(entry):
@@ -369,9 +464,10 @@ def _keep_in_file(rel):
 
 
 def _keep_symbol(wanted):
-    def keep(name, loc):
+    def keep(name, loc, provenance):
         if name == wanted:
-            return SymbolHit(name, loc.get("line"), loc.get("path"))
+            return SymbolHit(name, loc.get("line"), loc.get("path"),
+                             provenance)
         return None
 
     keep.file_anchor = lambda entry: False
@@ -495,13 +591,39 @@ def as_json(result):
     return doc
 
 
-def _anchors(note, result):
-    """Why this note came up, as data: the symbols, and the file itself."""
-    anchors = [{"kind": SYMBOL, "name": hit.name, "path": hit.path,
-                "line": hit.line} for hit in note.symbols]
+def _anchors(note, result, debug=False):
+    """Why this note came up, as data: the symbols, and the file itself.
+
+    Each symbol anchor carries the provenance of its link — the published
+    `state` and `method`, and the `basis` that produced them. A file anchor
+    has none to carry: a note names a path or it does not, and there is no
+    disambiguation to explain.
+    """
+    anchors = []
+    for hit in note.symbols:
+        anchor = {"kind": SYMBOL, "name": hit.name, "path": hit.path,
+                  "line": hit.line}
+        if hit.provenance is not None:
+            anchor.update(as_provenance(hit.provenance, debug))
+        anchors.append(anchor)
     if note.file_anchor:
-        anchors.append({"kind": FILE, "path": result.resolved})
+        anchors.append({"kind": FILE, "path": result.resolved,
+                        "state": "match", "method": "file_anchor",
+                        "basis": [["file_named_in_note", result.resolved]]})
     return anchors
+
+
+def as_provenance(provenance, debug=False):
+    """The published shape of one link's provenance."""
+    doc = {"state": provenance.state,
+           "method": provenance.method,
+           "basis": [{"kind": kind, "value": value}
+                     for kind, value in provenance.basis]}
+    if debug:
+        # The resolver's own word for the branch it took. Present only when
+        # asked for, and promised to nobody.
+        doc["internal_reason"] = provenance.reason
+    return doc
 
 
 def render_text(result):

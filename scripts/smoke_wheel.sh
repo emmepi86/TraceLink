@@ -90,6 +90,24 @@ assert doc["hits"] and doc["hits"][0]["finding_id"], doc
 print("consult --json schema", doc["schema_version"], "ok")
 PY
 
+echo "== a link can explain itself =="
+"$VENV_TL" explain RES-02 --repo . --vault "$WORK/vault" \
+  | grep -q 'Method:' \
+  || { echo "explain did not report a method"; exit 1; }
+"$VENV_TL" explain RES-02 --repo . --vault "$WORK/vault" --json \
+  > "$WORK/explain.json"
+"$VENV_PY" - "$WORK/explain.json" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1]))
+assert doc["schema_version"] == 1, doc
+link = doc["links"][0]
+assert link["state"] == "match", link
+assert link["method"], link
+assert link["basis"], link
+assert "internal_reason" not in link, "internal reason leaked without --debug"
+print("explain --json state", link["state"], "method", link["method"], "ok")
+PY
+
 echo "== the vault the installed package produced is the real thing =="
 test -s "$WORK/vault/CODE-INDEX.md" || { echo "no CODE-INDEX.md"; exit 1; }
 grep -q 'RES-01' "$WORK/vault/CODE-INDEX.md" \

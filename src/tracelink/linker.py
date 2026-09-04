@@ -404,6 +404,13 @@ def _dotted_matches_path(path: str, ref: str) -> bool:
 def disambiguate(name: str, locations: list, text: str, overrides: dict):
     """Pick a location only when the evidence points at exactly one.
 
+    Returns `(location, reason, basis)`. The basis is the evidence that
+    produced the reason — the qualified name found in the note, the path it
+    cited, the dotted reference that matched — as `[kind, value]` pairs, so
+    that a link can later explain itself without the resolver being run
+    again. It is recorded for refusals too: knowing which two paths
+    disagreed is the point of reporting a conflict at all.
+
     Two candidates supported by the note are not a tie to break — they are the
     author naming both. Returning the first was the same defect as v1 resolving
     duplicates by filesystem order, moved one level up.
@@ -433,8 +440,9 @@ def disambiguate(name: str, locations: list, text: str, overrides: dict):
         want = overrides[name]
         for loc in locations:
             if want in (loc.get("qualified_name"), loc["path"], fmt(loc)):
-                return loc, "frontmatter-override"
-        return None, "override-unmatched"
+                return loc, "frontmatter-override", [["frontmatter_override",
+                                                      want]]
+        return None, "override-unmatched", [["frontmatter_override", want]]
 
     refs = _dotted_refs(name, text)
     by_dotted, dotted_how = [], None
@@ -447,10 +455,11 @@ def disambiguate(name: str, locations: list, text: str, overrides: dict):
                          if any(_dotted_matches_path(l["path"], r) for r in refs)]
             dotted_how = "dotted-path"
         if not by_dotted:
-            return None, "dotted-unmatched"
+            return None, "dotted-unmatched", [["dotted_reference", r]
+                                              for r in refs]
 
     if len(locations) == 1:
-        return locations[0], "unique"
+        return locations[0], "unique", [["sole_candidate", name]]
 
     by_qualified = [l for l in locations
                     if l.get("qualified_name") and l["qualified_name"] != name
@@ -458,22 +467,50 @@ def disambiguate(name: str, locations: list, text: str, overrides: dict):
     by_path = [l for l in locations if l["path"] in text]
 
     if len(by_qualified) > 1:
-        return None, "multiple-qualified-names"
+        return None, "multiple-qualified-names", [
+            ["qualified_name_in_note", l["qualified_name"]]
+            for l in by_qualified]
     if len(by_path) > 1:
-        return None, "multiple-paths-in-note"
+        return None, "multiple-paths-in-note", [["path_in_note", l["path"]]
+                                                for l in by_path]
     if by_qualified and by_path and by_qualified[0] is not by_path[0]:
-        return None, "qualified-name-and-path-disagree"
+        return None, "qualified-name-and-path-disagree", [
+            ["qualified_name_in_note", by_qualified[0]["qualified_name"]],
+            ["path_in_note", by_path[0]["path"]]]
     if by_dotted and len(by_path) == 1 and all(l is not by_path[0] for l in by_dotted):
-        return None, "dotted-and-path-disagree"
+        return None, "dotted-and-path-disagree", [
+            ["dotted_reference", _matching_ref(by_dotted[0], refs, dotted_how)],
+            ["path_in_note", by_path[0]["path"]]]
     if len(by_qualified) == 1:
-        return by_qualified[0], "qualified-name"
+        return by_qualified[0], "qualified-name", [
+            ["qualified_name_in_note", by_qualified[0]["qualified_name"]]]
     if len(by_path) == 1:
-        return by_path[0], "path-in-note"
+        return by_path[0], "path-in-note", [["path_in_note",
+                                             by_path[0]["path"]]]
     if refs:
         if len(by_dotted) == 1:
-            return by_dotted[0], dotted_how
-        return None, "dotted-ambiguous"
-    return None, "ambiguous"
+            basis = [["dotted_reference",
+                      _matching_ref(by_dotted[0], refs, dotted_how)]]
+            if dotted_how == "dotted-path":
+                basis.append(["path_suffix_match", by_dotted[0]["path"]])
+            return by_dotted[0], dotted_how, basis
+        return None, "dotted-ambiguous", [["dotted_reference", r]
+                                          for r in refs]
+    return None, "ambiguous", []
+
+
+def _matching_ref(loc, refs, how):
+    """Which of the note's dotted references picked this location.
+
+    The evidence, not a restatement of the conclusion: a note may write
+    several dotted names and the reader is owed the one that decided.
+    """
+    for ref in refs:
+        if how == "dotted-name" and _dotted_matches_qualified(loc, ref):
+            return ref
+        if how == "dotted-path" and _dotted_matches_path(loc["path"], ref):
+            return ref
+    return refs[0] if refs else None
 
 
 _OVERRIDE = re.compile(r"^\s*tracelink:\s*$\n((?:\s+\w[\w.]*:\s*\S+\s*\n)+)", re.M)
@@ -653,9 +690,26 @@ def load_state(path: str) -> Optional[dict]:
             return None
         amb = entry.get("ambiguous")
         if not isinstance(amb, list) or not all(
-                isinstance(a, (list, tuple)) and len(a) == 2
-                and all(isinstance(x, str) for x in a) for a in amb):
+                isinstance(a, (list, tuple)) and len(a) == 3
+                and isinstance(a[0], str) and isinstance(a[1], str)
+                and isinstance(a[2], list)
+                and all(isinstance(c, str) for c in a[2]) for a in amb):
             return None
+        prov = entry.get("provenance")
+        if not isinstance(prov, list) or len(prov) != len(linked):
+            return None
+        for record in prov:
+            if not isinstance(record, dict):
+                return None
+            if not isinstance(record.get("reason"), str):
+                return None
+            basis = record.get("basis")
+            if not isinstance(basis, list) or not all(
+                    isinstance(b, (list, tuple)) and len(b) == 2
+                    and isinstance(b[0], str)
+                    and (b[1] is None or isinstance(b[1], str))
+                    for b in basis):
+                return None
     return raw
 
 
@@ -1005,17 +1059,24 @@ def main(argv=None, prog=None) -> int:
             # ambiguous name IS mentioned, so a change to its locations
             # trips `mention_pat` and forces the relink above). Under that
             # proof, re-running disambiguation would reproduce this list.
-            note_ambiguous = [(sym, how) for sym, how in entry["ambiguous"]]
+            note_ambiguous = [tuple(a) for a in entry["ambiguous"]]
+            # Provenance is cached with the links it explains, under the same
+            # proof: recomputing it would reproduce these exact reasons.
+            note_provenance = [dict(pr) for pr in entry["provenance"]]
         else:
             note_ambiguous = []
-            links = []
+            links, note_provenance = [], []
             for sym, why in candidates(body, symbols, args.min_len, stop):
-                loc, how = disambiguate(sym, symbols[sym], body, overrides)
+                loc, how, basis = disambiguate(sym, symbols[sym], body,
+                                               overrides)
                 if loc is None:
-                    note_ambiguous.append((sym, how))
+                    note_ambiguous.append((sym, how,
+                                           [fmt(l) for l in symbols[sym]]))
                     continue
                 links.append((sym, loc, f"{why}/{how}"))
+                note_provenance.append({"reason": how, "basis": basis})
             links = links[: args.max_links]
+            note_provenance = note_provenance[: args.max_links]
             # --max-links caps the TOTAL, symbols first — the block's own
             # order is the budget's order.
             note_files = resolved_files[: max(0, args.max_links - len(links))]
@@ -1027,7 +1088,9 @@ def main(argv=None, prog=None) -> int:
                           for _s, l, _w in links],
             "files": list(note_files),
             "files_fingerprint": files_fp,
-            "ambiguous": [[sym, how] for sym, how in note_ambiguous]}
+            "provenance": note_provenance,
+            "ambiguous": [[sym, how, list(cands)]
+                          for sym, how, cands in note_ambiguous]}
         if not links and not note_files:
             # Distinguish the causes rather than reporting a single count.
             known = [w for w in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", body)
@@ -1039,11 +1102,11 @@ def main(argv=None, prog=None) -> int:
             else:
                 reason = "no-identifiers"
             unlinked.append({"id": os.path.splitext(name)[0], "reason": reason})
-        for sym, how in note_ambiguous:
+        for sym, how, cands in note_ambiguous:
             ambiguous_refs[sym].append(os.path.splitext(name)[0])
             print(f"AMBIGUOUS {sym} in {name} ({how})")
-            for loc in symbols[sym]:
-                print(f"  - {fmt(loc)}")
+            for where in cands:
+                print(f"  - {where}")
         for ref, matches in note_file_ambiguous:
             ambiguous_files[ref].append(os.path.splitext(name)[0])
             ambiguous_file_candidates[ref] = matches
