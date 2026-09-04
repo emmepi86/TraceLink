@@ -246,6 +246,22 @@ lie waiting to happen.
 }
 ```
 
+When a consult has nothing to say, the document carries `coverage` instead
+of hits — counts of where the vault has anchors at all, and how many the
+target's own directory has:
+
+```json
+"coverage": {"target_directory": "alembic",
+             "anchors_here": 0,
+             "by_directory": {"app/core": 15, "app/services": 10}}
+```
+
+It is counts and never a percentage. TraceLink does not know how much memory
+a repository *should* have, so a coverage score would be a number about
+nothing. What it does know is the difference between an area nobody has
+written about and an area that was examined — and until 0.9 it said the same
+words for both.
+
 An `error` object appears when there is one, with a published code:
 `no_state`, `state_schema_unsupported`, `state_unusable`,
 `ambiguous_target`, `target_not_found`, `invalid_target`.

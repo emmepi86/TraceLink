@@ -261,10 +261,10 @@ class ConsultResult:
     """
 
     __slots__ = ("input", "kind", "resolved", "notes", "hidden", "silence",
-                 "candidates")
+                 "candidates", "coverage")
 
     def __init__(self, resolved, notes=(), hidden=0, silence=None,
-                 kind=FILE, input=None, candidates=()):
+                 kind=FILE, input=None, candidates=(), coverage=None):
         self.resolved = resolved
         self.kind = kind
         self.input = resolved if input is None else input
@@ -272,6 +272,9 @@ class ConsultResult:
         self.hidden = hidden
         self.silence = silence
         self.candidates = tuple(candidates)
+        #: Where the vault has anchors at all — populated only when this
+        #: result has nothing to say, so silence can be read correctly.
+        self.coverage = coverage
 
     #: The historical name for `resolved`, kept because the rendered text
     #: quotes it and the hook has printed it since 0.7.0.
@@ -390,6 +393,49 @@ def _tidy_title(title, note_id, severity):
         if head and bracket.strip().lower() in SEVERITY_RANK:
             title = head
     return title.strip()
+
+
+def coverage(notes, target_directory=None):
+    """Where the vault has anchors at all, by directory.
+
+    Answers the question a silent consult leaves open. `nothing recorded`
+    means one of two very different things —
+
+        the area was looked at and carries no constraints
+        nobody has ever written anything about this area
+
+    — and TraceLink cannot tell them apart, so it must not let a reader
+    assume the first. Reporting where memory exists at all makes the
+    difference visible: a directory with no anchors anywhere in the vault is
+    unexamined, not clean.
+
+    Computed only when there is nothing to say, over a state already in
+    memory, so the answering path pays nothing for it.
+    """
+    counts = {}
+    for entry in notes.values():
+        if not isinstance(entry, dict):
+            continue
+        paths = [loc.get("path") for loc in entry.get("locations") or []
+                 if isinstance(loc, dict)]
+        paths += [p for p in entry.get("files") or [] if isinstance(p, str)]
+        for path in {p for p in paths if p}:
+            directory = path.rsplit("/", 1)[0] if "/" in path else "."
+            counts[directory] = counts.get(directory, 0) + 1
+    rolled = {}
+    for directory, n in counts.items():
+        parts = directory.split("/")
+        key = "/".join(parts[:2]) if len(parts) > 1 else parts[0]
+        rolled[key] = rolled.get(key, 0) + n
+    here = None
+    if target_directory is not None:
+        here = sum(n for d, n in counts.items()
+                   if d == target_directory
+                   or d.startswith(target_directory + "/"))
+    return {"by_directory": dict(sorted(rolled.items(),
+                                        key=lambda kv: (-kv[1], kv[0]))),
+            "target_directory": target_directory,
+            "anchors_here": here}
 
 
 def _rank(hit):
@@ -576,8 +622,11 @@ def consult(project, target, kind=None, vault=None, limit=MAX_NOTES):
                              input=target)
 
     if not hits:
+        directory = (resolved.rsplit("/", 1)[0] if kind == FILE
+                     and "/" in resolved else None)
         return ConsultResult(resolved, silence="not-linked", kind=kind,
-                             input=target)
+                             input=target,
+                             coverage=coverage(notes, directory))
     hits.sort(key=_rank)
     shown = hits if limit is None else hits[:limit]
     return ConsultResult(resolved, shown, len(hits) - len(shown), kind=kind,
@@ -645,6 +694,8 @@ def as_json(result):
             "anchors": _anchors(note, result),
         } for note in result.notes],
     }
+    if result.coverage and not result.notes:
+        doc["coverage"] = result.coverage
     code = error_code(result)
     if code is not None:
         error = {"code": code}
@@ -714,6 +765,35 @@ def render_text(result):
                  "assuming this area is clean)")
     if result.hidden:
         lines.append(f"…and {result.hidden} more in CODE-INDEX.md")
+    return "\n".join(lines)
+
+
+def render_coverage(result, limit=6):
+    """What a silent answer is entitled to say — and what it must not.
+
+    Deliberately not a percentage. TraceLink does not know how much memory
+    a repository *should* have, so a coverage score would be a number about
+    nothing. These are counts of what exists.
+
+    Rendered by the CLI only. The edit hook stays silent when it has nothing
+    to say: volunteering "I know nothing about this file" after every edit
+    would be noise, and the hook's whole contract is not to speak uninvited.
+    """
+    if result.notes or not result.coverage:
+        return ""
+    lines = ["No linked findings.", ""]
+    here = result.coverage.get("anchors_here")
+    directory = result.coverage.get("target_directory")
+    if directory is not None:
+        lines.append(f"  {directory + '/':<24} "
+                     + (f"{here} anchor(s)" if here else "no recorded anchors"))
+    for name, n in list(result.coverage["by_directory"].items())[:limit]:
+        if name != directory:
+            lines.append(f"  {name + '/':<24} {n} anchor(s)")
+    lines += ["",
+              "TraceLink cannot conclude that no constraints exist here:",
+              "an area nobody has written about and an area known to be "
+              "clean look the same."]
     return "\n".join(lines)
 
 
@@ -806,6 +886,10 @@ def main(argv=None, prog=None) -> int:
               "run `tracelink link` to rewrite it", file=sys.stderr)
     elif not args.json and not result.notes:
         print(f"nothing recorded about {result.resolved}", file=sys.stderr)
+        detail = render_coverage(result)
+        if detail:
+            print("", file=sys.stderr)
+            print(detail, file=sys.stderr)
     return exit_code(result)
 
 

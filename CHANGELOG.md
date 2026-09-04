@@ -274,6 +274,18 @@
   already carried explicit evidence, so the gate could not cost recall. Both
   benchmarks rerun unchanged afterwards — false assertions 1 → 0, false
   authority 3 → 0, recall 32/32 and 56/56 in both cases unmoved.
+- **A silent answer no longer reads as a clean bill of health.** `nothing
+  recorded about X` meant two different things — *this area was examined and
+  carries no constraints* and *nobody has ever written about this area* —
+  and TraceLink cannot tell them apart. An agent experiment walked straight
+  into it: thirteen consultations about migrations, thirteen silences, and
+  no way to know the vault had never covered that subtree. `consult` now
+  reports where anchors exist at all, by directory, with the target's own
+  directory first, and says in words that it cannot conclude the area is
+  clean. Counts, never a percentage: the tool does not know how much memory
+  a repository should have, so a score would be a number about nothing. The
+  work happens only on the silent path, and the edit hook stays quiet —
+  saying "I know nothing about this file" after every edit is noise.
 - **A test that the property stays true**: no shipped source assigns
   `sys.argv`, every `main()` leaves the process argv byte-for-byte intact,
   each module is callable in-process on its own, and an explicit empty
