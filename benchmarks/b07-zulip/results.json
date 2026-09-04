@@ -1,0 +1,354 @@
+{
+  "counts": {
+    "correct match": 12,
+    "correct ambiguity": 2,
+    "correct no-assertion": 1
+  },
+  "rows": [
+    {
+      "finding_id": "ZUL-001",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "check_full_name"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "check_full_name"
+        ],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "external-knowledge"
+    },
+    {
+      "finding_id": "ZUL-002",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "handle_upload_pre_finish_hook"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "handle_upload_pre_finish_hook"
+        ],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "external-knowledge"
+    },
+    {
+      "finding_id": "ZUL-003",
+      "outcome": "correct ambiguity",
+      "expected": {
+        "state": "ambiguous",
+        "names": [
+          "build_reactions"
+        ]
+      },
+      "actual": {
+        "state": "ambiguous",
+        "symbols": [],
+        "files": [],
+        "ambiguous": [
+          "build_reactions"
+        ]
+      },
+      "adversarial": false,
+      "category": "external-knowledge"
+    },
+    {
+      "finding_id": "ZUL-004",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "MessagePartial"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "MessagePartial",
+          "UserProfile"
+        ],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "external-knowledge"
+    },
+    {
+      "finding_id": "ZUL-005",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "do_create_user"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "do_create_user"
+        ],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "external-knowledge"
+    },
+    {
+      "finding_id": "ZUL-006",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "billing_page"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "billing_page"
+        ],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "external-knowledge"
+    },
+    {
+      "finding_id": "ZUL-007",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "do_add_submessage"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "do_add_submessage"
+        ],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "external-knowledge"
+    },
+    {
+      "finding_id": "ZUL-008",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "validate_attachment_request"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "validate_attachment_request"
+        ],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "external-knowledge"
+    },
+    {
+      "finding_id": "ZUL-009",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "stage_two_of_registration"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "stage_two_of_registration"
+        ],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "external-knowledge"
+    },
+    {
+      "finding_id": "ZUL-010",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "clean_email"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [
+          "clean_email"
+        ],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "external-knowledge"
+    },
+    {
+      "finding_id": "ZUL-011",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "file",
+            "path": "zerver/middleware.py"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [],
+        "files": [
+          "zerver/middleware.py"
+        ],
+        "ambiguous": [
+          "process_request",
+          "authenticate"
+        ]
+      },
+      "adversarial": false,
+      "category": "external-knowledge"
+    },
+    {
+      "finding_id": "ZUL-012",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "file",
+            "path": "zerver/data_import/slack.py"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [],
+        "files": [
+          "zerver/data_import/slack.py"
+        ],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "external-knowledge"
+    },
+    {
+      "finding_id": "ZUL-013",
+      "outcome": "correct match",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "file",
+            "path": "tools/lib/provision_inner.py"
+          }
+        ]
+      },
+      "actual": {
+        "state": "match",
+        "symbols": [],
+        "files": [
+          "tools/lib/provision_inner.py"
+        ],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "external-knowledge"
+    },
+    {
+      "finding_id": "ZUL-014",
+      "outcome": "correct ambiguity",
+      "expected": {
+        "state": "ambiguous",
+        "names": [
+          "Command"
+        ]
+      },
+      "actual": {
+        "state": "ambiguous",
+        "symbols": [],
+        "files": [],
+        "ambiguous": [
+          "Command"
+        ]
+      },
+      "adversarial": false,
+      "category": "external-knowledge"
+    },
+    {
+      "finding_id": "ZUL-015",
+      "outcome": "correct no-assertion",
+      "expected": {
+        "state": "no-assertion"
+      },
+      "actual": {
+        "state": "no-assertion",
+        "symbols": [],
+        "files": [],
+        "ambiguous": []
+      },
+      "adversarial": false,
+      "category": "external-knowledge"
+    }
+  ],
+  "false_authoritative_assertions": 0,
+  "recovered": 12,
+  "resolvable": 12,
+  "by_category": {
+    "external-knowledge": {
+      "correct match": 12,
+      "correct ambiguity": 2,
+      "correct no-assertion": 1
+    }
+  }
+}

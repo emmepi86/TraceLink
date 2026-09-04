@@ -18,6 +18,7 @@ findings a human wrote about code they know, and is measured separately.
 - [`b01/`](b01/) — one large private codebase, redacted results.
 - [`b05-home-assistant/`](b05-home-assistant/) — **the first codebase we did not write**, published whole: findings, gold and results.
 - [`b06-erpnext/`](b06-erpnext/) — a second external codebase, where the knowledge is business rules rather than device quirks.
+- [`b07-zulip/`](b07-zulip/) — a third, chosen as a control for heavily documented projects.
 
 ## An experiment we invalidated
 

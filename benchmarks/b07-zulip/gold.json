@@ -1,0 +1,283 @@
+{
+  "target": "zulip/zulip (shallow HEAD)",
+  "authored": "from the project's public PR history; no TraceLink output consulted",
+  "findings": [
+    {
+      "finding_id": "ZUL-001",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "check_full_name"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 40063",
+        "category": "external-knowledge",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ZUL-002",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "handle_upload_pre_finish_hook"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 39764 / 39788",
+        "category": "external-knowledge",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ZUL-003",
+      "expected": {
+        "state": "ambiguous",
+        "names": [
+          "build_reactions"
+        ]
+      },
+      "review": {
+        "source": "PR 23465",
+        "category": "external-knowledge",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true,
+        "corrected_after_review": true,
+        "correction": "the finding names build_reactions without saying which importer. Three importers define it, so the name is genuinely ambiguous and TraceLink refused it. The gold expected a match because the anchor was checked for existence, not for uniqueness \u2014 the finding needed to cite its path, as a real author would."
+      }
+    },
+    {
+      "finding_id": "ZUL-004",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "MessagePartial"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 23041",
+        "category": "external-knowledge",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ZUL-005",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "do_create_user"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 29556",
+        "category": "external-knowledge",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ZUL-006",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "billing_page"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 28346",
+        "category": "external-knowledge",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ZUL-007",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "do_add_submessage"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 26053",
+        "category": "external-knowledge",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ZUL-008",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "validate_attachment_request"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 39471",
+        "category": "external-knowledge",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ZUL-009",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "stage_two_of_registration"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 39461",
+        "category": "external-knowledge",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ZUL-010",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "symbol",
+            "name": "clean_email"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 39476",
+        "category": "external-knowledge",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ZUL-011",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "file",
+            "path": "zerver/middleware.py"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 23061",
+        "category": "external-knowledge",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true,
+        "corrected_after_review": true,
+        "correction": "process_request is defined FIVE times inside zerver/middleware.py \u2014 one per middleware class. Citing the path cannot disambiguate when every candidate shares it, so TraceLink refused the symbol and anchored the file the author named. The gold assumed a path always disambiguates; it does not."
+      }
+    },
+    {
+      "finding_id": "ZUL-012",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "file",
+            "path": "zerver/data_import/slack.py"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 23465",
+        "category": "external-knowledge",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ZUL-013",
+      "expected": {
+        "state": "match",
+        "anchors": [
+          {
+            "kind": "file",
+            "path": "tools/lib/provision_inner.py"
+          }
+        ]
+      },
+      "review": {
+        "source": "PR 38678",
+        "category": "external-knowledge",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ZUL-014",
+      "expected": {
+        "state": "ambiguous",
+        "names": [
+          "Command"
+        ]
+      },
+      "review": {
+        "source": "structural observation",
+        "category": "external-knowledge",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    },
+    {
+      "finding_id": "ZUL-015",
+      "expected": {
+        "state": "no-assertion"
+      },
+      "review": {
+        "source": "project process",
+        "category": "external-knowledge",
+        "adversarial": false,
+        "authored_from": "the project's own PR history, before TraceLink ran",
+        "verified_by_human": true
+      }
+    }
+  ]
+}

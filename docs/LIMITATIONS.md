@@ -30,6 +30,15 @@ because an author who writes `` `db` `` in backticks means the symbol, and
 explicit evidence must keep winning. Complexity spent to suppress noise
 that creates no false claim is complexity in the wrong place.
 
+## A cited path cannot resolve homonyms inside one file
+
+Naming the file a symbol lives in is evidence that disambiguates *between*
+files. Where one file defines the same name several times — five
+`process_request` methods in one Django middleware module, one per class —
+every candidate shares the cited path and it settles nothing. TraceLink
+refuses the symbol and anchors the file, which is correct and worth knowing
+before writing a finding that expects otherwise.
+
 ## A reference is not a relationship
 
 **Known limitation.**
