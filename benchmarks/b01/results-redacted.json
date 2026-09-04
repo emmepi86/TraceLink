@@ -272,5 +272,58 @@
       "consequence": "index noise ingested without a filter"
     }
   ],
-  "discipline": "None of these was fixed while the benchmark that found them was running. Widening a heuristic to turn a benchmark green is how a tool ends up overfitted to the one repository it was tested on."
+  "discipline": "None of these was fixed while the benchmark that found them was running. Widening a heuristic to turn a benchmark green is how a tool ends up overfitted to the one repository it was tested on.",
+  "after_correction_cycle": {
+    "tracelink": {
+      "commit": "610c0c6"
+    },
+    "note": "same harness, same target, three runs; ranges are min-max across the three. The target was read-only again: no file under it was created or modified.",
+    "runs": 3,
+    "consult_file_p50_ms": {
+      "before": 9.912,
+      "after_range": [
+        1.216,
+        1.322
+      ]
+    },
+    "consult_symbol_p50_ms": {
+      "before": 10.275,
+      "after": 1.218
+    },
+    "explain_p50_ms": {
+      "before": 8.992,
+      "after_range": [
+        0.599,
+        0.722
+      ]
+    },
+    "link_state_bytes": {
+      "before": 1510604,
+      "after": 65820
+    },
+    "index_warm_min_s": {
+      "before": 1.626,
+      "after_range": [
+        1.895,
+        2.173
+      ]
+    },
+    "link_full_s": {
+      "before": 0.843,
+      "after_range": [
+        0.976,
+        1.171
+      ]
+    },
+    "findings": {
+      "F1": "fixed",
+      "F2": "partially fixed — unconditional walk removed, F2b (freshness hashing) open",
+      "F3": "fixed",
+      "F4": "fixed",
+      "F5": "fixed",
+      "O1": "fixed",
+      "O2": "fixed"
+    },
+    "regression": "indexing and linking pay for the new checks: path validation measures 0.15s of it directly, the rest is the identifier and prose filters plus run-to-run variance. Not optimised away, because the trade is one compile per sync against one serve per edit."
+  }
 }

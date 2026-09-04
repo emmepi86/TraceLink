@@ -104,3 +104,38 @@ total. The 4–5× measured on small repositories is real there and not here.
 ### O1 — one backend emits module docstrings as symbol names  ·  P2
 
 Index noise, ingested without a filter.
+
+---
+
+## After the correction cycle
+
+Same harness, same target, three runs; ranges are min–max. Read-only again:
+nothing under the target was created or modified.
+
+| | before | after |
+|---|---:|---:|
+| `consult`, file — p50 | 9.91 ms | **1.22 – 1.32 ms** |
+| `consult`, symbol — p50 | 10.28 ms | **1.22 ms** |
+| `explain` — p50 | 8.99 ms | **0.60 – 0.72 ms** |
+| link state on disk | 1.51 MB | **0.066 MB** |
+| index — warm min | 1.63 s | 1.90 – 2.17 s |
+| link, full | 0.84 s | 0.98 – 1.17 s |
+
+**The per-edit path got 7–13× faster; the per-run compile got slower.** That
+is not an accident to be explained away: indexing now validates every
+location against the repository (0.15 s of it, measured directly), filters
+prose the graph backend used to hand over as symbols, and records where its
+evidence came from; linking writes a second sidecar. None of it was
+optimised away afterwards, because the trade is one compile per `sync`
+against one serve per edit, and because tuning inside the benchmark that
+measured you is how a tool ends up fitted to its own test data.
+
+| Finding | State |
+|---|---|
+| F1 — per-edit cost tracked the index | **fixed** — the term is gone, not reduced |
+| F2 — link's floor | **partially** — the unconditional walk is gone; F2b (hashing every file to verify freshness) is open and untouched |
+| F3 — upstream staleness invisible | **fixed** — `effective_freshness` cannot exceed its evidence |
+| F4 — path-base mismatch silent | **fixed** — the same graph backend on this target now refuses with `10458 of 10458 locations do not name a file inside <repo>` where it used to write 104 confident links |
+| F5 — file ambiguity forgotten | **fixed** — recorded like a symbol ambiguity |
+| O1 — docstrings as symbols | **fixed** — 3 531 prose nodes ignored, by the type the graph itself records |
+| O2 — prose on a JSON stdout | **fixed** — asserted across every command |
