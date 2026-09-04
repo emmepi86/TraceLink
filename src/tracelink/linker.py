@@ -72,6 +72,8 @@ import re
 import sys
 from typing import Dict, List, Optional, Tuple
 
+from . import consult as _consult
+
 #: The scan backend's directory excludes, imported rather than copied: a
 #: private duplicate would drift, and file anchors must see exactly the tree
 #: the symbol index sees.
@@ -534,7 +536,9 @@ def write_atomic(path: str, content: str) -> None:
 # prove is relinked in full. Naming follows `.tracelink-manifest.json`.
 
 #: Sidecar filename. Public: status locates the same file.
-STATE_FILE = ".tracelink-link-state.json"
+#: Imported, not redefined: `consult` reads this same sidecar on the hot
+#: path and a second spelling of the name or the schema would drift.
+STATE_FILE = _consult.STATE_FILE
 _STATE_FILE = STATE_FILE  # private alias kept for internal compatibility
 #: v2 caches each link's resolved location alongside its name, so the skip
 #: path renders the managed block from the state instead of disambiguating
@@ -545,7 +549,7 @@ _STATE_FILE = STATE_FILE  # private alias kept for internal compatibility
 #: proof covers exactly the inputs disambiguation reads. A v1 or v2 state —
 #: or any other version — is discarded whole: the schema-mismatch path IS
 #: the migration, one full relink.
-_STATE_SCHEMA = 3
+_STATE_SCHEMA = _consult.STATE_SCHEMA
 
 
 def sha256_text(data) -> str:

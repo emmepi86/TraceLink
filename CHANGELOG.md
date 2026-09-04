@@ -12,6 +12,26 @@
   The plugin's in-process runner stopped swapping the host process's argv
   for the same reason. This is what makes `from tracelink import ...`
   usable as a library instead of a simulated command line.
+- **`consult` is a library call.** The lookup that answers "does the vault
+  already know something about this file?" moved out of the Claude Code hook
+  and into `tracelink.consult`, where it returns objects — `ConsultResult`,
+  `NoteHit`, `SymbolHit` — and a separate `render_text()` renders the
+  briefing. The hook is now an adapter that owns only what is Claude-shaped:
+  the opt-in gate, the PostToolUse payload, the `hookSpecificOutput`
+  envelope. The injected text is byte-identical to 0.8.0.
+- **The core is a leaf, and a test keeps it one.** `tracelink.consult`
+  imports the standard library and nothing from tracelink: it runs after
+  every edit, where `import linker` would cost ~30ms and `import
+  dataclasses` ~26ms (hence plain `__slots__` classes). The link-state
+  filename and schema now live in `consult` and `linker` imports them, so
+  the two readers of that sidecar cannot drift. The `mark` path still
+  imports nothing at all.
+- **Silence carries a reason.** `no-link-state`, `state-schema`,
+  `not-linked`, `no-target` — so a caller can tell "nothing is written about
+  this file" from "the state could not be read".
+- **Fixed: a note whose bytes are not UTF-8 raised** `UnicodeDecodeError`
+  out of the hook, inside the user's turn. Damaged input is degraded text
+  now, never an exception.
 - **A test that the property stays true**: no shipped source assigns
   `sys.argv`, every `main()` leaves the process argv byte-for-byte intact,
   each module is callable in-process on its own, and an explicit empty
