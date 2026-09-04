@@ -156,7 +156,9 @@ class TheVocabularyIsReached(unittest.TestCase):
                 TheVocabularyIsReached.seen_methods.add(method)
         for item in state["notes"][note].get("ambiguous", []):
             TheVocabularyIsReached.seen_states.add(
-                RESOLUTION[item[1]][0])
+                RESOLUTION[item["reason"]][0])
+            TheVocabularyIsReached.seen_basis.update(
+                b[0] for b in item.get("basis", []))
         TheVocabularyIsReached.seen_basis.update(basis_kinds_of(state, note))
 
     def test_sole_candidate(self):
@@ -256,9 +258,9 @@ class TheVocabularyIsReached(unittest.TestCase):
                                   finding("`validate` is wrong."))
             entry = state["notes"]["RES-01.md"]
             self.assertEqual([], entry["provenance"])
-            self.assertEqual("validate", entry["ambiguous"][0][0])
-            self.assertEqual("ambiguous", entry["ambiguous"][0][1])
-            self.assertEqual(2, len(entry["ambiguous"][0][2]))
+            self.assertEqual("validate", entry["ambiguous"][0]["name"])
+            self.assertEqual("ambiguous", entry["ambiguous"][0]["reason"])
+            self.assertEqual(2, len(entry["ambiguous"][0]["candidates"]))
             self.record(state)
 
     def test_conflicting_evidence_is_a_conflict_not_a_choice(self):
@@ -268,9 +270,13 @@ class TheVocabularyIsReached(unittest.TestCase):
                 finding("`payments.validate` is wrong, see "
                         "`src/refunds.py`."))
             entry = state["notes"]["RES-01.md"]
+            item = entry["ambiguous"][0]
             self.assertEqual("qualified-name-and-path-disagree",
-                             entry["ambiguous"][0][1])
-            self.assertEqual("conflict", RESOLUTION[entry["ambiguous"][0][1]][0])
+                             item["reason"])
+            self.assertEqual("conflict", RESOLUTION[item["reason"]][0])
+            # a conflict carries the evidence that collided, not just a label
+            self.assertEqual({"qualified_name_in_note", "path_in_note"},
+                             {b[0] for b in item["basis"]})
             self.record(state)
 
     def test_zz_everything_declared_was_produced(self):
@@ -394,11 +400,74 @@ class ConsultCarriesTheSameProvenance(unittest.TestCase):
             self.assertEqual((("qualified_name_in_note",
                                "payments.validate"),), hit.provenance.basis)
 
-    def test_a_state_without_provenance_leaves_the_link_unexplained(self):
-        """Not an error and not a guess: schema 4 is what carries reasons,
-        and a link made before it says so."""
-        self.assertIsNone(consult_mod._provenance(None))
-        self.assertIsNone(consult_mod._provenance({"basis": []}))
+class SchemaFourForbidsAnUnexplainedMatch(unittest.TestCase):
+    """`match` is an assertion. A state that cannot say how it reached one
+    is not repaired in place and not reported as a plain match — it is
+    rejected, which sends the caller back to `tracelink link`.
+
+    The alternative, `{"state": "match", "method": null, "basis": []}`, would
+    be a link you have to trust rather than check: exactly the thing this
+    format exists to prevent.
+    """
+
+    def damaged(self, mutate):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)   # the project must outlive this call
+        proj, vault, state = build(tmp.name, TWO_FILES,
+                                   finding("`payments.validate` fails."))
+        mutate(state["notes"]["RES-01.md"])
+        with open(os.path.join(vault, STATE_FILE), "w") as fh:
+            json.dump(state, fh)
+        return proj, vault
+
+    def test_a_link_with_no_provenance_record_invalidates_the_state(self):
+        proj, _v = self.damaged(lambda entry: entry.update({"provenance": []}))
+        result = consult_mod.consult(proj, "src/payments.py")
+        self.assertEqual("state-invalid", result.silence)
+        self.assertEqual("state_unusable", consult_mod.error_code(result))
+        self.assertEqual(consult_mod.EXIT_NO_STATE,
+                         consult_mod.exit_code(result))
+
+    def test_a_match_with_an_empty_basis_invalidates_the_state(self):
+        def strip(entry):
+            entry["provenance"][0]["basis"] = []
+        proj, _v = self.damaged(strip)
+        self.assertEqual("state-invalid",
+                         consult_mod.consult(proj, "src/payments.py").silence)
+
+    def test_an_unknown_reason_invalidates_the_state(self):
+        def rename(entry):
+            entry["provenance"][0]["reason"] = "vibes"
+        proj, _v = self.damaged(rename)
+        self.assertEqual("state-invalid",
+                         consult_mod.consult(proj, "src/payments.py").silence)
+
+    def test_explain_refuses_the_same_state(self):
+        proj, _v = self.damaged(lambda entry: entry.update({"provenance": []}))
+        explanation, error = explain_mod.explain(proj, "RES-01")
+        self.assertIsNone(explanation)
+        self.assertEqual("state-invalid", error)
+
+    def test_the_object_itself_cannot_be_built_unexplained(self):
+        with self.assertRaises(consult_mod.InvalidState):
+            consult_mod.Provenance("unique", [])          # no basis
+        with self.assertRaises(consult_mod.InvalidState):
+            consult_mod.Provenance("not-a-reason", [["sole_candidate", "x"]])
+
+    def test_the_linker_rebuilds_a_state_it_cannot_trust(self):
+        """Rejected, not repaired: the next link run writes a whole one."""
+        proj, vault = self.damaged(lambda entry: entry.update(
+            {"provenance": []}))
+        quiet = io.StringIO()
+        with contextlib.redirect_stdout(quiet):
+            linker.main(["--vault", vault, "--symbols",
+                         os.path.join(proj, ".tracelink", "symbols.json"),
+                         "--repo", proj])
+        with open(os.path.join(vault, STATE_FILE)) as fh:
+            healed = json.load(fh)
+        entry = healed["notes"]["RES-01.md"]
+        self.assertEqual(len(entry["linked"]), len(entry["provenance"]))
+        self.assertTrue(entry["provenance"][0]["basis"])
 
 
 if __name__ == "__main__":

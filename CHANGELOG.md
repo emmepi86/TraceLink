@@ -98,6 +98,17 @@
   produces would be a lie waiting to happen).
 - `consult --json` anchors carry the same provenance. Additive: still
   `schema_version: 1`. The version tracks incompatibility, not releases.
+- **Schema 4 has no shape for a match that cannot explain itself.** The
+  first cut let a link with no provenance be reported as `{"state":
+  "match", "method": null, "basis": []}` — a link you must trust rather
+  than check, which is the thing this format exists to prevent. The
+  invariant is now enforced: a `match` carries a known reason and a
+  non-empty basis, an `ambiguous` refusal carries two or more candidates, a
+  `conflict` carries the evidence that collided. A state that breaks it is
+  not repaired in place and not reported as a plain match — `link` rebuilds
+  it, `consult` and `explain` fail closed with `state_unusable` (exit 5).
+  Unresolved names became records (`name` / `reason` / `candidates` /
+  `basis`) so a refusal can show its evidence too.
 - **A test that the property stays true**: no shipped source assigns
   `sys.argv`, every `main()` leaves the process argv byte-for-byte intact,
   each module is callable in-process on its own, and an explicit empty

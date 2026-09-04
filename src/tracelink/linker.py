@@ -689,28 +689,64 @@ def load_state(path: str) -> Optional[dict]:
         if not isinstance(entry.get("files_fingerprint"), str):
             return None
         amb = entry.get("ambiguous")
-        if not isinstance(amb, list) or not all(
-                isinstance(a, (list, tuple)) and len(a) == 3
-                and isinstance(a[0], str) and isinstance(a[1], str)
-                and isinstance(a[2], list)
-                and all(isinstance(c, str) for c in a[2]) for a in amb):
+        if not isinstance(amb, list):
             return None
+        for item in amb:
+            if not isinstance(item, dict):
+                return None
+            if not isinstance(item.get("name"), str):
+                return None
+            if not _valid_basis(item.get("basis")):
+                return None
+            if not _valid_unresolved(item.get("reason"),
+                                     item.get("candidates")):
+                return None
         prov = entry.get("provenance")
+        # Schema 4's invariant: a link exists only WITH the reason and the
+        # evidence that produced it. A state that cannot explain one of its
+        # own matches is not a state to be repaired in place — it is
+        # rebuilt, which is what returning None here causes.
         if not isinstance(prov, list) or len(prov) != len(linked):
             return None
         for record in prov:
             if not isinstance(record, dict):
                 return None
-            if not isinstance(record.get("reason"), str):
+            reason = record.get("reason")
+            if reason not in _consult.RESOLUTION:
+                return None
+            if _consult.RESOLUTION[reason][0] != "match":
                 return None
             basis = record.get("basis")
-            if not isinstance(basis, list) or not all(
-                    isinstance(b, (list, tuple)) and len(b) == 2
-                    and isinstance(b[0], str)
-                    and (b[1] is None or isinstance(b[1], str))
-                    for b in basis):
+            if not _valid_basis(basis) or not basis:
                 return None
     return raw
+
+
+def _valid_basis(basis) -> bool:
+    """`[[kind, value], ...]`, with kinds this version publishes."""
+    return isinstance(basis, list) and all(
+        isinstance(b, (list, tuple)) and len(b) == 2
+        and isinstance(b[0], str) and b[0] in _consult.BASIS_KINDS
+        and (b[1] is None or isinstance(b[1], str))
+        for b in basis)
+
+
+def _valid_unresolved(reason, candidates) -> bool:
+    """A refusal must say what it refused between.
+
+    `ambiguous` means two or more places were possible, so fewer than two
+    candidates is not an ambiguity — it is a corrupt record. A `conflict`
+    needs at least the evidence that collided.
+    """
+    if reason not in _consult.RESOLUTION:
+        return False
+    state = _consult.RESOLUTION[reason][0]
+    if state == "match":
+        return False
+    if not isinstance(candidates, list) or not all(
+            isinstance(c, str) for c in candidates):
+        return False
+    return len(candidates) >= (2 if state == "ambiguous" else 1)
 
 
 def cached_links(entry: dict) -> list:
@@ -1059,7 +1095,7 @@ def main(argv=None, prog=None) -> int:
             # ambiguous name IS mentioned, so a change to its locations
             # trips `mention_pat` and forces the relink above). Under that
             # proof, re-running disambiguation would reproduce this list.
-            note_ambiguous = [tuple(a) for a in entry["ambiguous"]]
+            note_ambiguous = [dict(a) for a in entry["ambiguous"]]
             # Provenance is cached with the links it explains, under the same
             # proof: recomputing it would reproduce these exact reasons.
             note_provenance = [dict(pr) for pr in entry["provenance"]]
@@ -1070,8 +1106,10 @@ def main(argv=None, prog=None) -> int:
                 loc, how, basis = disambiguate(sym, symbols[sym], body,
                                                overrides)
                 if loc is None:
-                    note_ambiguous.append((sym, how,
-                                           [fmt(l) for l in symbols[sym]]))
+                    note_ambiguous.append({
+                        "name": sym, "reason": how,
+                        "candidates": [fmt(l) for l in symbols[sym]],
+                        "basis": basis})
                     continue
                 links.append((sym, loc, f"{why}/{how}"))
                 note_provenance.append({"reason": how, "basis": basis})
@@ -1089,8 +1127,7 @@ def main(argv=None, prog=None) -> int:
             "files": list(note_files),
             "files_fingerprint": files_fp,
             "provenance": note_provenance,
-            "ambiguous": [[sym, how, list(cands)]
-                          for sym, how, cands in note_ambiguous]}
+            "ambiguous": note_ambiguous}
         if not links and not note_files:
             # Distinguish the causes rather than reporting a single count.
             known = [w for w in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", body)
@@ -1102,10 +1139,10 @@ def main(argv=None, prog=None) -> int:
             else:
                 reason = "no-identifiers"
             unlinked.append({"id": os.path.splitext(name)[0], "reason": reason})
-        for sym, how, cands in note_ambiguous:
-            ambiguous_refs[sym].append(os.path.splitext(name)[0])
-            print(f"AMBIGUOUS {sym} in {name} ({how})")
-            for where in cands:
+        for item in note_ambiguous:
+            ambiguous_refs[item["name"]].append(os.path.splitext(name)[0])
+            print(f"AMBIGUOUS {item['name']} in {name} ({item['reason']})")
+            for where in item["candidates"]:
                 print(f"  - {where}")
         for ref, matches in note_file_ambiguous:
             ambiguous_files[ref].append(os.path.splitext(name)[0])

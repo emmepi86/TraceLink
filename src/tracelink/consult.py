@@ -118,6 +118,16 @@ BASIS_KINDS = ("frontmatter_override", "sole_candidate",
 JSON_SCHEMA_VERSION = 1
 
 
+class InvalidState(Exception):
+    """A link state that schema 4 forbids.
+
+    Raised, not swallowed, so the caller fails closed. The alternative —
+    reporting `match` with no method and no basis — would publish an
+    assertion that cannot explain itself, which is the one thing this
+    format exists to prevent.
+    """
+
+
 class Provenance:
     """Why a link exists: the conclusion, and the evidence behind it.
 
@@ -129,10 +139,13 @@ class Provenance:
     __slots__ = ("state", "method", "basis", "reason")
 
     def __init__(self, reason, basis=()):
+        if reason not in RESOLUTION:
+            raise InvalidState(f"unknown resolution reason {reason!r}")
         self.reason = reason
-        self.state, self.method = RESOLUTION.get(reason, ("match", None))
-        self.basis = tuple((str(kind), value)
-                           for kind, value in basis)
+        self.state, self.method = RESOLUTION[reason]
+        self.basis = tuple((str(kind), value) for kind, value in basis)
+        if self.state == "match" and not self.basis:
+            raise InvalidState(f"{reason!r} asserted a match with no basis")
 
     def __eq__(self, other):
         return (isinstance(other, Provenance) and self.reason == other.reason
@@ -413,7 +426,7 @@ def _note_hits(notes, vault, keep):
             continue
         records = entry.get("provenance")
         if not isinstance(records, list) or len(records) != len(linked):
-            records = [None] * len(linked)
+            raise InvalidState("provenance does not cover every link")
         symbols = []
         for name, loc, record in zip(linked, locations, records):
             if not isinstance(name, str) or not isinstance(loc, dict):
@@ -432,20 +445,26 @@ def _note_hits(notes, vault, keep):
 
 
 def _provenance(record):
-    """A `Provenance` from a state record, or None when the state has none.
+    """The `Provenance` a schema 4 record must carry.
 
-    A state written before provenance existed is not an error and not a
-    guess: the link is simply unexplained until the next `link` run.
+    Schema 4 has one invariant and this is where it is enforced: a link
+    exists only with the reason and the evidence that produced it. A record
+    that is missing, malformed or unknown does not degrade into an
+    unexplained match — it invalidates the state, which sends the caller
+    back to `tracelink link` rather than forward with an assertion nobody
+    can check.
     """
     if not isinstance(record, dict):
-        return None
+        raise InvalidState("a link without a provenance record")
     reason = record.get("reason")
     if not isinstance(reason, str):
-        return None
+        raise InvalidState("a provenance record without a reason")
     basis = record.get("basis")
+    if not isinstance(basis, list):
+        raise InvalidState(f"{reason!r} has no basis list")
     pairs = [(b[0], b[1]) for b in basis
              if isinstance(b, (list, tuple)) and len(b) == 2
-             and isinstance(b[0], str)] if isinstance(basis, list) else []
+             and isinstance(b[0], str)]
     return Provenance(reason, pairs)
 
 
@@ -500,19 +519,23 @@ def consult(project, target, kind=None, vault=None, limit=MAX_NOTES):
         return ConsultResult(resolved, silence=reason, kind=kind,
                              input=target)
 
-    if kind == FILE:
-        hits = _note_hits(notes, vault, _keep_in_file(resolved))
-    else:
-        name, candidates = resolve_symbol(notes, target)
-        if candidates:
-            return ConsultResult(target, silence="ambiguous-symbol",
-                                 kind=kind, input=target,
-                                 candidates=candidates)
-        if name is None:
-            return ConsultResult(target, silence="not-linked", kind=kind,
-                                 input=target)
-        resolved = name
-        hits = _note_hits(notes, vault, _keep_symbol(name))
+    try:
+        if kind == FILE:
+            hits = _note_hits(notes, vault, _keep_in_file(resolved))
+        else:
+            name, candidates = resolve_symbol(notes, target)
+            if candidates:
+                return ConsultResult(target, silence="ambiguous-symbol",
+                                     kind=kind, input=target,
+                                     candidates=candidates)
+            if name is None:
+                return ConsultResult(target, silence="not-linked", kind=kind,
+                                     input=target)
+            resolved = name
+            hits = _note_hits(notes, vault, _keep_symbol(name))
+    except InvalidState:
+        return ConsultResult(resolved, silence="state-invalid", kind=kind,
+                             input=target)
 
     if not hits:
         return ConsultResult(resolved, silence="not-linked", kind=kind,
@@ -533,6 +556,7 @@ PUBLIC_ERROR = {
     "ambiguous-symbol": "ambiguous_target",
     "no-target": "invalid_target",
     "not-found": "target_not_found",
+    "state-invalid": "state_unusable",
     "not-linked": None,  # not an error: the vault simply says nothing
 }
 
@@ -540,6 +564,7 @@ PUBLIC_ERROR = {
 EXIT_FOR_ERROR = {
     "no_state": EXIT_NO_STATE,
     "state_schema_unsupported": EXIT_NO_STATE,
+    "state_unusable": EXIT_NO_STATE,
     "ambiguous_target": EXIT_AMBIGUOUS,
     "invalid_target": EXIT_USAGE,
     "target_not_found": EXIT_NOT_FOUND,

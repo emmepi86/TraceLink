@@ -61,13 +61,15 @@ class Link:
 class Unresolved:
     """One name the resolver refused to link, and what it could have meant."""
 
-    __slots__ = ("name", "state", "reason", "candidates")
+    __slots__ = ("name", "state", "reason", "candidates", "basis")
 
-    def __init__(self, name, reason, candidates=()):
+    def __init__(self, name, reason, candidates=(), basis=()):
         self.name = name
         self.reason = reason
         self.state = _consult.RESOLUTION.get(reason, ("ambiguous", None))[0]
         self.candidates = tuple(candidates)
+        self.basis = tuple((b[0], b[1]) for b in basis
+                           if isinstance(b, (list, tuple)) and len(b) == 2)
 
 
 def find_note(notes, finding_id):
@@ -107,20 +109,26 @@ def explain(project, finding_id, vault=None):
     locations = entry.get("locations") if isinstance(
         entry.get("locations"), list) else []
     records = entry.get("provenance")
-    if not isinstance(records, list) or len(records) != len(linked):
-        records = [None] * len(linked)
+    records = records if isinstance(records, list) else []
 
     links = []
-    for name, loc, record in zip(linked, locations, records):
-        loc = loc if isinstance(loc, dict) else {}
-        links.append(Link(name, loc.get("path"), loc.get("line"),
-                          _consult._provenance(record)))
+    try:
+        if len(records) != len(linked):
+            raise _consult.InvalidState("provenance does not cover the links")
+        for name, loc, record in zip(linked, locations, records):
+            loc = loc if isinstance(loc, dict) else {}
+            links.append(Link(name, loc.get("path"), loc.get("line"),
+                              _consult._provenance(record)))
+    except _consult.InvalidState:
+        # Schema 4 has no shape for a match that cannot explain itself.
+        return None, "state-invalid"
 
     unresolved = []
     for item in entry.get("ambiguous") or []:
-        if isinstance(item, (list, tuple)) and len(item) >= 2:
-            cands = item[2] if len(item) > 2 and isinstance(item[2], list) else ()
-            unresolved.append(Unresolved(item[0], item[1], cands))
+        if isinstance(item, dict) and isinstance(item.get("name"), str):
+            unresolved.append(Unresolved(item["name"], item.get("reason"),
+                                         item.get("candidates") or (),
+                                         item.get("basis") or ()))
 
     files = [f for f in (entry.get("files") or []) if isinstance(f, str)]
     return Explanation(note_id, note_file, status, severity, title,
@@ -144,20 +152,18 @@ def as_json(explanation, debug=False):
                   for path in explanation.files],
         "unresolved": [{"name": item.name, "state": item.state,
                         "method": None,
-                        "candidates": list(item.candidates)}
+                        "candidates": list(item.candidates),
+                        "basis": [{"kind": kind, "value": value}
+                                  for kind, value in item.basis]}
                        for item in explanation.unresolved],
     }
 
 
 def _link_json(link, debug):
+    """Every link has provenance: schema 4 admits no other kind."""
     doc = {"kind": _consult.SYMBOL, "name": link.name, "path": link.path,
            "line": link.line}
-    if link.provenance is not None:
-        doc.update(_consult.as_provenance(link.provenance, debug))
-    else:
-        # A link made before provenance was recorded. Unexplained is a
-        # state; inventing a method for it would be worse than saying so.
-        doc.update({"state": "match", "method": None, "basis": []})
+    doc.update(_consult.as_provenance(link.provenance, debug))
     return doc
 
 
@@ -176,22 +182,17 @@ def render_text(explanation):
                   "Nothing in this finding resolved to code."]
     for link in explanation.links:
         provenance = link.provenance
-        state = provenance.state if provenance else "match"
-        lines.append(state.upper())
+        lines.append(provenance.state.upper())
         lines.append(f"  {link.name}")
         where = link.path or "?"
         if link.line is not None:
             where += f":{link.line}"
         lines.append(f"  {where}")
         lines.append("")
-        lines.append(f"  Method: {provenance.method if provenance else 'unrecorded'}")
-        if provenance and provenance.basis:
-            lines.append("  Basis:")
-            for kind, value in provenance.basis:
-                lines.append(f"    {_phrase(kind, value)}")
-        elif provenance is None:
-            lines.append("    linked before provenance was recorded — "
-                         "`tracelink link` will explain it")
+        lines.append(f"  Method: {provenance.method}")
+        lines.append("  Basis:")
+        for kind, value in provenance.basis:
+            lines.append(f"    {_phrase(kind, value)}")
         lines.append("")
     for path in explanation.files:
         lines += ["MATCH", f"  {path}", "", "  Method: file_anchor",
@@ -200,6 +201,8 @@ def render_text(explanation):
     for item in explanation.unresolved:
         lines.append(item.state.upper())
         lines.append(f"  the finding names `{item.name}`")
+        for kind, value in item.basis:
+            lines.append(f"    {_phrase(kind, value)}")
         if item.candidates:
             lines.append("")
             lines.append("  Candidates:")

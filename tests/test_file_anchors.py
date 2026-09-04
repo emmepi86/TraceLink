@@ -345,10 +345,12 @@ class AmbiguityNoLongerImpliesAbsence(_AnchorCase):
         self.assertIn("AMBIGUOUS validate", r.stdout)
         entry = json.loads(self.read(STATE))["notes"]["RES-01.md"]
         self.assertEqual(entry["files"], ["infra/docker/compose.yml"])
-        self.assertEqual(entry["ambiguous"][0][:2], ["validate", "ambiguous"])
+        item = entry["ambiguous"][0]
+        self.assertEqual("validate", item["name"])
+        self.assertEqual("ambiguous", item["reason"])
         # v4: an ambiguous name carries the candidates it could not choose
         # between, so `explain` can show them without the resolver running.
-        self.assertEqual(sorted(entry["ambiguous"][0][2]),
+        self.assertEqual(sorted(item["candidates"]),
                          sorted(["src/users.py:L3", "src/payments.py:L7"]))
         self.assertIn("- infra/docker/compose.yml", self.block("RES-01.md"))
 
