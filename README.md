@@ -161,6 +161,22 @@ python3 scripts/symbols.py --help
 ## Use
 
 ```bash
+tracelink sync            # index + split + link, with the project's paths
+tracelink sync --check    # CI form: writes nothing, exits 1 if out of date
+```
+
+`sync` orchestrates and nothing more — it runs the three commands below, in
+order, stopping at the first failure. Same repository, same register, same
+configuration means the same bytes out, and a second run changes nothing:
+both are tested by checksum rather than asserted here.
+
+`--check` never writes. It copies `.tracelink/`, runs the whole pipeline on
+the copy against the real repository, and compares — exact rather than
+approximate precisely *because* sync is deterministic.
+
+The three steps remain separately useful, and separately runnable:
+
+```bash
 # 1. symbol map: identifier -> file:line
 tracelink index --repo /path/to/code --out symbols.json
 

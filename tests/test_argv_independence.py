@@ -24,17 +24,13 @@ import unittest.mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
-from tracelink import (cli, hook, lint, linker, splitter,  # noqa: E402
-                       status, symbol_index)
+from tracelink import cli  # noqa: E402
 
-MODULES = {
-    "split": splitter,
-    "index": symbol_index,
-    "link": linker,
-    "status": status,
-    "lint": lint,
-    "hook": hook,
-}
+#: Derived from the dispatcher rather than listed by hand: a command added
+#: to the CLI without argv independence should fail here on the day it is
+#: added, not on the day somebody remembers to extend this list.
+MODULES = {name: __import__(f"tracelink.{module}", fromlist=["main"])
+           for name, (module, _desc) in cli._COMMANDS.items()}
 
 #: A value nothing in the tree has any business reading, let alone writing.
 SENTINEL = ["SENTINEL-argv-0", "--sentinel-flag", "sentinel-positional"]
@@ -139,7 +135,7 @@ class CallableInProcess(unittest.TestCase):
             err = io.StringIO()
             with contextlib.redirect_stderr(err):
                 with self.assertRaises(SystemExit) as raised:
-                    lint.main([])
+                    MODULES["lint"].main([])
             self.assertEqual(2, raised.exception.code)
             self.assertIn("--register", err.getvalue())
 

@@ -51,6 +51,26 @@ MAX_NOTES = 5
 #: Severity order; anything unknown sinks below `low`.
 SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
+#: The managed block a note carries: everything between these two markers
+#: belongs to `link`, and nothing else in the note does. They live in the
+#: leaf module because two writers need them — `link`, which renders the
+#: block, and `split`, which regenerates the note around it — and a second
+#: spelling of a marker would silently orphan every block already on disk.
+BLOCK_START = "<!-- tracelink:linked-code:start -->"
+BLOCK_END = "<!-- tracelink:linked-code:end -->"
+
+
+def managed_block(text):
+    """The block markers and everything between them, or "" if absent."""
+    start = text.find(BLOCK_START)
+    if start < 0:
+        return ""
+    end = text.find(BLOCK_END, start)
+    if end < 0:
+        return ""
+    return text[start:end + len(BLOCK_END)]
+
+
 #: How far into a note to look for its heading before giving up.
 _HEAD_LINES = 200
 

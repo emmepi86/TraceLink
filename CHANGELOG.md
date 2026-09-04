@@ -109,6 +109,29 @@
   it, `consult` and `explain` fail closed with `state_unusable` (exit 5).
   Unresolved names became records (`name` / `reason` / `candidates` /
   `basis`) so a refusal can show its evidence too.
+- **`tracelink sync`** — index, split, link, in order, with the project's
+  configured paths, stopping at the first failure. Orchestration only: a
+  rule about linking that appeared in `sync` would be a second copy of a
+  rule that already exists, and the copy is the one that rots. Determinism
+  and idempotence are tested by checksum — same inputs, same bytes; a second
+  run rewrites nothing. `--check` writes nothing at all: it copies
+  `.tracelink/`, runs the pipeline on the copy against the real repository
+  and compares, which is exact rather than approximate *because* sync is
+  deterministic, and names the files a real run would touch.
+- **Fixed: `split` deleted the links.** It regenerates a note from the
+  register, and the register knows nothing about links — so every run
+  removed the managed block `link` had written. The vault still ended up
+  correct, because `link` ran afterwards and put it back, which is why this
+  went unnoticed: the documented `index → split → link` pipeline rewrote
+  every note twice on every run, and the incremental skip — the feature that
+  makes re-linking cheap enough to automate — could never fire in it. Split
+  now carries an existing block across verbatim, in `link`'s exact spacing
+  (one newline out and `link` rewrites the note, which is the same defect
+  again). The block's contents are never inspected there: `link` still
+  verifies them byte for byte and repairs what no longer fits.
+- `.tracelink/config.json` gets a documented reader with defaults, shared by
+  the commands. The plugin keeps its own copy, because it must import
+  nothing on the per-edit path; a test pins the two to the same keys.
 - **A test that the property stays true**: no shipped source assigns
   `sys.argv`, every `main()` leaves the process argv byte-for-byte intact,
   each module is callable in-process on its own, and an explicit empty

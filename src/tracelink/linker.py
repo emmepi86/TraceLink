@@ -117,8 +117,8 @@ def _strip_syntax_prefixes(token: str) -> str:
     return token
 
 _FORWARD_HEADING = "## Linked code"
-_BLOCK_START = "<!-- tracelink:linked-code:start -->"
-_BLOCK_END = "<!-- tracelink:linked-code:end -->"
+_BLOCK_START = _consult.BLOCK_START
+_BLOCK_END = _consult.BLOCK_END
 
 _FRONTMATTER = re.compile(r"\A---\n.*?\n---\n", re.S)
 _MANAGED = re.compile(

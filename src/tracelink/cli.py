@@ -15,6 +15,7 @@ _COMMANDS = {
     "split": ("splitter", "turn a findings register into one note per finding"),
     "index": ("symbol_index", "build the symbol map (graphify | ctags | scan)"),
     "link": ("linker", "cross-link notes and code, both directions"),
+    "sync": ("sync", "index + split + link, the whole memory in one step"),
     "consult": ("consult", "what the vault knows about a file or symbol"),
     "explain": ("explain", "why a finding is linked where it is"),
     "status": ("status", "one-shot health of register, vault, index and links"),
@@ -29,6 +30,7 @@ usage: tracelink <command> [options]
   index   {_COMMANDS['index'][1]}
   split   {_COMMANDS['split'][1]}
   link    {_COMMANDS['link'][1]}
+  sync    {_COMMANDS['sync'][1]}
   consult {_COMMANDS['consult'][1]}
   explain {_COMMANDS['explain'][1]}
   status  {_COMMANDS['status'][1]}

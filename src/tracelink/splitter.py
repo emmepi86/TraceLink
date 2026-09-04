@@ -23,6 +23,8 @@ import os
 import re
 from typing import Dict, List
 
+from . import consult as _consult
+
 #: Explicit grammar. `STATUS: CLOSED` in a heading is unambiguous; free-form
 #: keywords are a legacy fallback and warn.
 _STATUS_RE = re.compile(
@@ -199,6 +201,38 @@ def note_body(fid: str, blocks: List[str], prefix: str) -> tuple:
     return body, st, sv, len(blocks), title
 
 
+def _keep_managed_block(path, body):
+    """Carry an existing note's linked-code block into its new body.
+
+    Split regenerates a note from the register, and the register knows
+    nothing about links — so a plain rewrite deleted the block `link` had
+    written, every time. The vault ended up correct only because `link` ran
+    afterwards and put it back, which meant every note was rewritten twice
+    per run and the incremental skip could never fire in the documented
+    index → split → link pipeline.
+
+    The block is reattached verbatim, in the position this module puts it:
+    right after the frontmatter. Its *contents* are never inspected here —
+    that is `link`'s business, and `link` verifies the block it finds byte
+    for byte against what it would render, so a block that no longer fits
+    the note is repaired on the next run rather than believed.
+    """
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            existing = fh.read()
+    except OSError:
+        return body
+    block = _consult.managed_block(existing)
+    if not block or _consult.BLOCK_START in body:
+        return body
+    head, sep, rest = body.partition("\n---\n")   # end of the frontmatter
+    if not sep:
+        return block + "\n\n" + body
+    # The exact spacing `link` renders — a note that differs from it by one
+    # newline is a note `link` rewrites, which is the whole defect again.
+    return head + sep + "\n" + block + "\n\n" + rest.lstrip("\n")
+
+
 def main(argv=None, prog=None) -> int:
     ap = argparse.ArgumentParser(
         prog=prog,
@@ -281,7 +315,9 @@ def main(argv=None, prog=None) -> int:
     rows = []
     for fid, blocks in by.items():
         body, st, sv, n, title = note_body(fid, blocks, args.prefix)
-        with open(os.path.join(args.out, f"{fid}.md"), "w") as fh:
+        path = os.path.join(args.out, f"{fid}.md")
+        body = _keep_managed_block(path, body)
+        with open(path, "w") as fh:
             fh.write(body)
         rows.append((fid, st, sv, n, title))
 
