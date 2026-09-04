@@ -237,16 +237,33 @@ def note_head(vault, note_file):
 
 
 def _tidy_title(title, note_id, severity):
-    """`RES-01 — totals ignore tax [HIGH]` → `totals ignore tax`: whoever
-    renders this already prints the id and the severity beside it."""
+    """`RES-01 — totals ignore tax [HIGH]` → `totals ignore tax`.
+
+    Two decorations come off: the id, which whoever renders this prints
+    beside the title anyway, and a trailing severity bracket — *any* of
+    them, not only the current one.
+
+    That last part matters. A finding downgraded from HIGH to LOW keeps its
+    original `[HIGH]` heading while `severity` says `low`; stripping only
+    the matching bracket left the stale one inside the title, and since 0.9
+    that title is a field of a published document. A consumer reading
+    `severity: "low"` next to `title: "... [HIGH]"` would be right to ask
+    which one to believe. The structured field is the answer, so the title
+    stops carrying a second, older copy of it.
+
+    Only the four words `SEVERITY:` itself accepts are stripped, and only
+    at the end: this is not a title parser, and a title that genuinely ends
+    in brackets keeps them.
+    """
     for sep in (" — ", " – ", " - "):
         if title.startswith(note_id + sep):
             title = title[len(note_id) + len(sep):]
             break
-    if severity:
-        suffix = "[" + severity + "]"
-        if title.lower().endswith(suffix.lower()):
-            title = title[:-len(suffix)]
+    stripped = title.rstrip()
+    if stripped.endswith("]"):
+        head, _, bracket = stripped[:-1].rpartition("[")
+        if head and bracket.strip().lower() in SEVERITY_RANK:
+            title = head
     return title.strip()
 
 

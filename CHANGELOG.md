@@ -67,6 +67,16 @@
   ambiguous name, `5` no readable link state. A symbol nothing links exits
   `0`, not `3`: the link state knows which symbols have findings, not which
   symbols exist.
+- **A public `title` no longer carries a stale severity.** A finding
+  downgraded from HIGH to LOW keeps `[HIGH]` in the heading it was filed
+  under, while `severity` says `low`. Consult stripped only the *matching*
+  bracket, so the old one survived into the title — and since `title` is a
+  field of the published document, a consumer would have read `severity:
+  "low"` beside `title: "… [HIGH]"` and been right to ask which is true. Any
+  trailing severity bracket now comes off, the structured field stays
+  authoritative, and the note on disk is untouched. Only the four words
+  `SEVERITY:` accepts are stripped: a title that genuinely ends in brackets
+  keeps them.
 - **A test that the property stays true**: no shipped source assigns
   `sys.argv`, every `main()` leaves the process argv byte-for-byte intact,
   each module is callable in-process on its own, and an explicit empty

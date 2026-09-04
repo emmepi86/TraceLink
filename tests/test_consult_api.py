@@ -292,6 +292,41 @@ class TheResultIsObjects(unittest.TestCase):
             self.assertEqual(2, len(result.notes))
             self.assertEqual(5, result.hidden)
 
+    def test_a_revised_severity_does_not_leave_a_stale_one_in_the_title(self):
+        """The heading keeps the severity a finding was filed under; the
+        frontmatter carries the one it has now. Since 0.9 `title` is a
+        published field, so it must not ship a second, older answer."""
+        notes = [("RES-01", "closed", "low",
+                  "the parser accepts an empty payload", [], ["src/app.py"])]
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = make_project(tmp, notes=notes)
+            path = os.path.join(proj, ".tracelink", "vault", "RES-01.md")
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+            # as split writes it after a downgrade: heading HIGH, field low
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(text.replace("[LOW]", "[HIGH]"))
+            note = consult(proj, "src/app.py").notes[0]
+            self.assertEqual("the parser accepts an empty payload",
+                             note.title)
+            self.assertEqual("low", note.severity)  # still authoritative
+
+    def test_a_title_that_merely_ends_in_brackets_keeps_them(self):
+        """Only the four words SEVERITY: accepts are stripped. This is not
+        a title parser."""
+        notes = [("RES-01", "open", "high", "empty payload [] is accepted",
+                  [], ["src/app.py"])]
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = make_project(tmp, notes=notes)
+            note = consult(proj, "src/app.py").notes[0]
+            self.assertEqual("empty payload [] is accepted", note.title)
+
+    def test_the_severity_vocabulary_is_the_splitters(self):
+        """Two spellings of "what counts as a severity" would drift, and the
+        one in consult decides what a published title may contain."""
+        from tracelink.splitter import _SEVERITIES
+        self.assertEqual(set(_SEVERITIES), set(consult_mod.SEVERITY_RANK))
+
     def test_a_note_that_is_not_utf_8_is_read_anyway_never_raised(self):
         """0.8.0 let a UnicodeDecodeError out of the hook. Corrupt input is
         silence or degraded text — never an exception in someone's turn."""
